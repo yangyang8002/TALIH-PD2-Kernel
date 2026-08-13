@@ -6,3 +6,6 @@ boot_logs.zip
 .talih_ref/
 prebuilts/clang/host/linux-x86/clang-r383902/bin/
 out/
+
+# SUSFS 构建依赖(由 Integrate_SUSFS.sh 拉取, 补丁已应用进树)
+susfs4ksu/

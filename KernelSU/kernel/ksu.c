@@ -1,168 +1,108 @@
-#include "kernel_includes.h"
+#include <linux/export.h>
+#include <linux/fs.h>
+#include <linux/kobject.h>
+#include <linux/module.h>
+#include <linux/workqueue.h>
 
-// uapi
-#include "include/uapi/app_profile.h"
-#include "include/uapi/feature.h"
-#include "include/uapi/selinux.h"
-#include "include/uapi/supercall.h"
-#include "include/uapi/sulog.h"
-
-// includes
-#include "include/klog.h"
-#include "include/ksu.h"
-
-// kernel compat, lite ones
-#include "infra/kernel_compat.h"
-
-#include "policy/app_profile.h"
-#include "policy/allowlist.h"
-#include "policy/feature.h"
-#include "manager/apk_sign.h"
-#include "manager/manager_identity.h"
-#include "manager/throne_tracker.h"
-#include "manager/pkg_observer.h"
-#include "supercall/internal.h"
-#include "supercall/supercall.h"
-#include "infra/su_mount_ns.h"
-#include "infra/file_wrapper.h"
-#include "infra/event_queue.h"
-#include "feature/adb_root.h"
-#include "feature/kernel_umount.h"
-#include "feature/sucompat.h"
-#include "feature/sulog.h"
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-#include "feature/selinux_hide.h"
-#endif
-#include "runtime/ksud.h"
-#include "sulog/event.h"
-#include "sulog/fd.h"
-
-#include "selinux/selinux.h"
-#include "selinux/sepolicy.h"
-
-// selinux includes
-#include "avc_ss.h"
-#include "objsec.h"
-#include "ss/services.h"
-#include "ss/symtab.h"
-#include "xfrm.h"
-#ifndef KSU_COMPAT_USE_SELINUX_STATE
-#include "avc.h"
-#endif
-
-#ifdef CONFIG_KPM
-#include "kpm/kpm.h"
-#include "kpm/compact.h"
-#include "kpm/super_access.h"
-#include "kpm/kpm.c"
-#include "kpm/compact.c"
-#include "kpm/super_access.c"
-#endif
-
-// unity build
-#include "policy/allowlist.c"
-#include "policy/app_profile.c"
-#include "policy/feature.c"
-#include "manager/apk_sign.c"
-#include "manager/throne_tracker.c"
-#include "manager/pkg_observer.c"
-
-#include "supercall/perm.c"
-#include "supercall/dispatch.c"
-#include "supercall/supercall.c"
-
-#include "infra/su_mount_ns.c"
-#include "infra/file_wrapper.c"
-#include "infra/event_queue.c"
-
-#ifdef CONFIG_KSU_FEATURE_ADBROOT
-#include "feature/adb_root.c"
-#endif
-#include "feature/kernel_umount.c"
-#include "feature/sucompat.c"
-#include "feature/sulog.c"
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-#include "feature/selinux_hide.c"
-#endif
-#include "runtime/ksud.c"
-
-#include "sulog/event.c"
-#include "sulog/fd.c"
-
-#include "hook/lsm_hook.c"
-
-#include "selinux/selinux.c"
-#include "selinux/sepolicy.c"
-#include "selinux/rules.c"
-
-#include "infra/kernel_compat.c"
-
-struct cred *ksu_cred;
-
-bool allow_shell = IS_ENABLED(CONFIG_KSU_DEBUG);
-module_param(allow_shell, bool, 0);
-
-bool ksu_no_custom_rc = false;
-module_param_named(norc, ksu_no_custom_rc, bool, 0);
-
-int __init kernelsu_init(void)
-{
-#ifdef CONFIG_KSU_DEBUG
-    pr_alert("*************************************************************");
-    pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
-    pr_alert("**                                                         **");
-    pr_alert("**         You are running KernelSU in DEBUG mode          **");
-    pr_alert("**                                                         **");
-    pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
-    pr_alert("*************************************************************");
-#endif
-
-    if (allow_shell) {
-        pr_alert("shell is allowed at init!");
-    }
-
-    ksu_cred = prepare_creds();
-    if (!ksu_cred) {
-        pr_err("prepare cred failed!\n");
-        return -ENOSYS;
-    }
+#include "allowlist.h"
+#include "arch.h"
+#include "core_hook.h"
+#include "klog.h" // IWYU pragma: keep
+#include "ksu.h"
+#include "throne_tracker.h"
 
 #ifdef CONFIG_KSU_SUSFS
-    susfs_init();
+#include <linux/susfs.h>
 #endif
 
-    ksu_feature_init();
+static struct workqueue_struct *ksu_workqueue;
 
-    ksu_supercalls_init();
-
-    ksu_lsm_hook_init();
-
-    ksu_sucompat_init();
-
-    ksu_sulog_init();
-
-    ksu_adb_root_init();
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-    ksu_selinux_hide_init();
-#endif
-
-    ksu_kernel_umount_init();
-
-    ksu_allowlist_init();
-
-    ksu_throne_tracker_init();
-
-    ksu_ksud_init();
-
-    ksu_file_wrapper_init();
-
-    return 0;
+bool ksu_queue_work(struct work_struct *work)
+{
+	return queue_work(ksu_workqueue, work);
 }
-device_initcall(kernelsu_init);
 
-/*
+extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+					void *argv, void *envp, int *flags);
+
+extern int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
+				    void *argv, void *envp, int *flags);
+
+int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
+			void *envp, int *flags)
+{
+	ksu_handle_execveat_ksud(fd, filename_ptr, argv, envp, flags);
+	return ksu_handle_execveat_sucompat(fd, filename_ptr, argv, envp,
+					    flags);
+}
+
+extern void ksu_sucompat_init();
+extern void ksu_sucompat_exit();
+extern void ksu_ksud_init();
+extern void ksu_ksud_exit();
+
+int __init ksu_kernelsu_init(void)
+{
+#ifdef CONFIG_KSU_DEBUG
+	pr_alert("*************************************************************");
+	pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
+	pr_alert("**                                                         **");
+	pr_alert("**         You are running KernelSU in DEBUG mode          **");
+	pr_alert("**                                                         **");
+	pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
+	pr_alert("*************************************************************");
+#endif
+
+#ifdef CONFIG_KSU_SUSFS
+	susfs_init();
+#endif
+
+	ksu_core_init();
+
+	ksu_workqueue = alloc_ordered_workqueue("kernelsu_work_queue", 0);
+
+	ksu_allowlist_init();
+
+	ksu_throne_tracker_init();
+
+#ifdef CONFIG_KPROBES
+	ksu_sucompat_init();
+	ksu_ksud_init();
+#else
+	pr_alert("KPROBES is disabled, KernelSU may not work, please check https://kernelsu.org/guide/how-to-integrate-for-non-gki.html");
+#endif
+
+#ifdef MODULE
+#ifndef CONFIG_KSU_DEBUG
+	kobject_del(&THIS_MODULE->mkobj.kobj);
+#endif
+#endif
+	return 0;
+}
+
+void ksu_kernelsu_exit(void)
+{
+	ksu_allowlist_exit();
+
+	ksu_throne_tracker_exit();
+
+	destroy_workqueue(ksu_workqueue);
+
+#ifdef CONFIG_KPROBES
+	ksu_ksud_exit();
+	ksu_sucompat_exit();
+#endif
+
+	ksu_core_exit();
+}
+
+module_init(ksu_kernelsu_init);
+module_exit(ksu_kernelsu_exit);
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("weishu");
 MODULE_DESCRIPTION("Android KernelSU");
-*/
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif
