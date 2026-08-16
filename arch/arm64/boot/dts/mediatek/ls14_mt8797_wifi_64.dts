@@ -1054,10 +1054,9 @@ fsa4480@42 {
 };
 /* Add-end by baiwei.peng for usb2.0 eye diagram on 2023/08/02 */
 
-#include "mediatek/bat_setting/lushan/ls_charge.dtsi"
+#include "bat_setting/lushan/ls_charge.dtsi"
 //Begin by yongzhuo for LUSHAN-176 on 2023.08.02
-#include "mediatek/cust_lushan14_touch_spi.dtsi"
+#include "cust_lushan14_touch_spi.dtsi"
 //End by yongzhuo for LUSHAN-176 on 2023.08.02
-#include "mediatek/cust_tb8797p2_ls14_camera.dtsi"
-#include <ls14_mt8797_wifi_64/cust.dtsi>
+#include "cust_tb8797p2_ls14_camera.dtsi"
 /*End of this file, DO NOT ADD ANYTHING HERE*/

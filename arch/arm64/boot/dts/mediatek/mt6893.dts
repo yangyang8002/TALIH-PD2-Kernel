@@ -6963,7 +6963,7 @@ page_owner=on loop.max_part=7";
 	};
 
 #if (CONFIG_MTK_GAUGE_VERSION == 30)
-	#include "mediatek/bat_setting/mt6893_battery_prop.dtsi"
+	#include "bat_setting/mt6893_battery_prop.dtsi"
 #endif
 
 	spmi_bus: spmi@10027000 {
@@ -8474,7 +8474,7 @@ page_owner=on loop.max_part=7";
 #endif
 };
 
-#include "mediatek/v1/mt6360.dtsi"
+#include "v1/mt6360.dtsi"
 
 &mt6360_pmic {
 	ldo6 {
@@ -8736,12 +8736,12 @@ page_owner=on loop.max_part=7";
 	};
 };
 
-#include "mediatek/mt6315_s6.dtsi"
-#include "mediatek/mt6315_s7.dtsi"
-#include "mediatek/mt6315_s3.dtsi"
-#include "mediatek/mt6359p.dtsi"
-#include "mediatek/cust_mt6893_msdc.dtsi"
-#include "mediatek/v1/mt6360_pd.dtsi"
+#include "mt6315_s6.dtsi"
+#include "mt6315_s7.dtsi"
+#include "mt6315_s3.dtsi"
+#include "mt6359p.dtsi"
+#include "cust_mt6893_msdc.dtsi"
+#include "v1/mt6360_pd.dtsi"
 
 &mt_pmic_vemc_ldo_reg {
 	regulator-min-microvolt = <2500000>;
@@ -8749,5 +8749,5 @@ page_owner=on loop.max_part=7";
 };
 
 #ifdef CONFIG_MTK_ENABLE_GENIEZONE
-#include "mediatek/trusty.dtsi"
+#include "trusty.dtsi"
 #endif
