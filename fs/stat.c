@@ -18,6 +18,11 @@
 #include <linux/pagemap.h>
 #include <linux/compat.h>
 
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+#include <linux/susfs_def.h>
+extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat);
+#endif
+
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
 
@@ -56,6 +61,9 @@ void generic_fillattr(struct user_namespace *mnt_userns, struct inode *inode,
 	stat->ctime = inode->i_ctime;
 	stat->blksize = i_blocksize(inode);
 	stat->blocks = inode->i_blocks;
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
+#endif
 }
 EXPORT_SYMBOL_NS(generic_fillattr, ANDROID_GKI_VFS_EXPORT_ONLY);
 
@@ -119,9 +127,18 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
 				  STATX_ATTR_DAX);
 
 	mnt_userns = mnt_user_ns(path->mnt);
-	if (inode->i_op->getattr)
+	if (inode->i_op->getattr) {
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+		int err = inode->i_op->getattr(mnt_userns, path, stat,
+					      request_mask, query_flags);
+		if (!err)
+			susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
+		return err;
+#else
 		return inode->i_op->getattr(mnt_userns, path, stat,
 					    request_mask, query_flags);
+#endif
+	}
 
 	generic_fillattr(mnt_userns, inode, stat);
 	return 0;
