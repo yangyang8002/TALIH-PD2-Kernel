@@ -1,0 +1,214 @@
+diff --git a/kernel/core/init.c b/kernel/core/init.c
+index 68fa9d5..f699f3a 100644
+--- a/kernel/core/init.c
++++ b/kernel/core/init.c
+@@ -27,6 +27,9 @@
+ #include "feature/selinux_hide.h"
+ #include "feature/uts_spoof.h"
+ #include "infra/symbol_resolver.h"
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs.h>
++#endif
+ 
+ #if defined(__x86_64__)
+ #include <asm/cpufeature.h>
+@@ -140,6 +143,10 @@ int __init kernelsu_init(void)
+ 
+     ksu_syscall_hook_init();
+ 
++#ifdef CONFIG_KSU_SUSFS
++    susfs_init();
++#endif
++
+     ksu_feature_init();
+     ksu_sulog_init();
+     ksu_adb_root_init();
+diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
+index d3f3ac4..dbed9bc 100644
+--- a/kernel/hook/setuid_hook.c
++++ b/kernel/hook/setuid_hook.c
+@@ -11,6 +11,10 @@
+ #include <linux/types.h>
+ #include <linux/uaccess.h>
+ #include <linux/uidgid.h>
++#include <linux/workqueue.h>
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs_def.h>
++#endif
+ 
+ #include "policy/allowlist.h"
+ #include "hook/setuid_hook.h"
+@@ -20,6 +24,9 @@
+ #include "supercall/supercall.h"
+ #include "hook/tp_marker.h"
+ #include "feature/kernel_umount.h"
++#ifdef CONFIG_KSU_SUSFS
++extern struct work_struct susfs_extra_works;
++#endif
+ 
+ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
+ {
+@@ -52,6 +59,16 @@ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
+     // Handle kernel umount
+     ksu_handle_umount(old_uid, new_uid);
+ 
++#ifdef CONFIG_KSU_SUSFS
++    // Mark current proc as umounted (susfs)
++    susfs_set_current_proc_umounted();
++
++    // Defer extra susfs work to workqueue so we do not block here
++    if (!work_pending(&susfs_extra_works)) {
++        schedule_work(&susfs_extra_works);
++    }
++#endif
++
+     return 0;
+ }
+ 
+diff --git a/kernel/selinux/selinux.c b/kernel/selinux/selinux.c
+index 90a0de0..ac143ba 100644
+--- a/kernel/selinux/selinux.c
++++ b/kernel/selinux/selinux.c
+@@ -195,6 +195,11 @@ bool is_ksu_domain(void)
+     return is_task_ksu_domain(current_cred());
+ }
+ 
++bool susfs_is_current_ksu_domain(void)
++{
++    return is_ksu_domain();
++}
++
+ bool is_zygote(const struct cred *cred)
+ {
+     return is_sid_match(cred, cached_zygote_sid, ZYGOTE_CONTEXT);
+diff --git a/kernel/selinux/selinux.h b/kernel/selinux/selinux.h
+index a17ed22..f3131f4 100644
+--- a/kernel/selinux/selinux.h
++++ b/kernel/selinux/selinux.h
+@@ -29,6 +29,8 @@ bool is_zygote(const struct cred *cred);
+ 
+ bool is_init(const struct cred *cred);
+ 
++bool susfs_is_current_ksu_domain(void);
++
+ void apply_kernelsu_rules();
+ 
+ int handle_sepolicy(void __user *user_data, u64 data_len);
+diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
+index 35b1b17..3bbbe12 100644
+--- a/kernel/supercall/dispatch.c
++++ b/kernel/supercall/dispatch.c
+@@ -23,6 +23,9 @@
+ #include "sulog/fd.h"
+ #include "supercall/supercall.h"
+ #include "feature/uts_spoof.h"
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs.h>
++#endif
+ 
+ #ifdef CONFIG_KPM
+ #include "kpm/kpm.h"
+@@ -101,6 +104,9 @@ static int do_report_event(void __user *arg)
+             } else {
+                 pr_info("boot_complete triggered\n");
+                 on_boot_completed();
++#ifdef CONFIG_KSU_SUSFS
++                susfs_start_sdcard_monitor_fn();
++#endif
+             }
+         }
+         break;
+diff --git a/kernel/supercall/supercall.c b/kernel/supercall/supercall.c
+index 4c9361b..7ce5c18 100644
+--- a/kernel/supercall/supercall.c
++++ b/kernel/supercall/supercall.c
+@@ -16,6 +16,9 @@
+ #include "supercall/internal.h"
+ #include "arch.h"
+ #include "klog.h" // IWYU pragma: keep
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs.h>
++#endif
+ 
+ struct ksu_install_fd_tw {
+     struct callback_head cb;
+@@ -87,6 +90,79 @@ static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
+     int magic1 = (int)PT_REGS_PARM1(real_regs);
+     int magic2 = (int)PT_REGS_PARM2(real_regs);
+ 
++#ifdef CONFIG_KSU_SUSFS
++    // Handle SUSFS supercalls: sys_reboot(KSU_INSTALL_MAGIC1, SUSFS_MAGIC, CMD_SUSFS_*, arg)
++    if (magic1 == KSU_INSTALL_MAGIC1 && magic2 == SUSFS_MAGIC && current_uid().val == 0) {
++        unsigned int cmd = (unsigned int)PT_REGS_PARM3(real_regs);
++        void __user *user_info = (void __user *)PT_REGS_SYSCALL_PARM4(real_regs);
++
++        switch (cmd) {
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++        case CMD_SUSFS_ADD_SUS_PATH:
++            susfs_add_sus_path(&user_info);
++            break;
++        case CMD_SUSFS_ADD_SUS_PATH_LOOP:
++            susfs_add_sus_path_loop(&user_info);
++            break;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
++        case CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS:
++            susfs_set_hide_sus_mnts_for_non_su_procs(&user_info);
++            break;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++        case CMD_SUSFS_ADD_SUS_KSTAT:
++        case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY:
++            susfs_add_sus_kstat(&user_info);
++            break;
++        case CMD_SUSFS_UPDATE_SUS_KSTAT:
++            susfs_update_sus_kstat(&user_info);
++            break;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++        case CMD_SUSFS_SET_UNAME:
++            susfs_set_uname(&user_info);
++            break;
++#endif
++#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
++        case CMD_SUSFS_ENABLE_LOG:
++            susfs_enable_log(&user_info);
++            break;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++        case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG:
++            susfs_set_cmdline_or_bootconfig(&user_info);
++            break;
++#endif
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++        case CMD_SUSFS_ADD_OPEN_REDIRECT:
++            susfs_add_open_redirect(&user_info);
++            break;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_MAP
++        case CMD_SUSFS_ADD_SUS_MAP:
++            susfs_add_sus_map(&user_info);
++            break;
++#endif
++        case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING:
++            susfs_set_avc_log_spoofing(&user_info);
++            break;
++        case CMD_SUSFS_SHOW_ENABLED_FEATURES:
++            susfs_get_enabled_features(&user_info);
++            break;
++        case CMD_SUSFS_SHOW_VARIANT:
++            susfs_show_variant(&user_info);
++            break;
++        case CMD_SUSFS_SHOW_VERSION:
++            susfs_show_version(&user_info);
++            break;
++        default:
++            break;
++        }
++        return 0;
++    }
++#endif
++
+     if (magic1 == KSU_INSTALL_MAGIC1 && magic2 == KSU_INSTALL_MAGIC2) {
+         struct ksu_install_fd_tw *tw;
+         unsigned long arg4 = (unsigned long)PT_REGS_SYSCALL_PARM4(real_regs);
