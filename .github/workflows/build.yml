@@ -56,6 +56,8 @@ jobs:
             --enable REGULATOR_MT6359 \
             --enable MTK_CMDQ_MBOX \
             --enable MEDIATEK_WATCHDOG \
+            --enable SERIAL_8250_MT6577 \
+            --enable MMC_MTK \
             --disable LTO_CLANG_FULL \
             --enable LTO_CLANG_THIN
           make olddefconfig
