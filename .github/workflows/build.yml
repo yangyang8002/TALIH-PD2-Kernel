@@ -46,11 +46,13 @@ jobs:
             --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
             --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
             --enable KSU_SUSFS_OPEN_REDIRECT \
-            --enable KSU_SUSFS_SUS_MAP
+            --enable KSU_SUSFS_SUS_MAP \
+            --disable LTO_CLANG_FULL \
+            --enable LTO_CLANG_THIN
           make olddefconfig
-          grep -E '^CONFIG_KSU(=|_SUSFS)' .config | sort
+          grep -E '^CONFIG_KSU(=|_SUSFS)|^CONFIG_LTO_CLANG' .config | sort
 
-      - name: Build kernel (full, incl. LTO link)
+      - name: Build kernel (ThinLTO link)
         run: |
           export ARCH=arm64 LLVM=1
           make -j$(nproc)
