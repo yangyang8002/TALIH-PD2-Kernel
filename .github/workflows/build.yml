@@ -38,6 +38,7 @@ jobs:
           make gki_defconfig
           scripts/config \
             --enable KSU \
+            --enable KPM \
             --enable KSU_SUSFS \
             --enable KSU_SUSFS_SUS_PATH \
             --enable KSU_SUSFS_SUS_MOUNT \
@@ -50,7 +51,7 @@ jobs:
             --disable LTO_CLANG_FULL \
             --enable LTO_CLANG_THIN
           make olddefconfig
-          grep -E '^CONFIG_KSU(=|_SUSFS)|^CONFIG_LTO_CLANG' .config | sort
+          grep -E '^CONFIG_KSU(=|_SUSFS)|^CONFIG_KPM|^CONFIG_KALLSYMS|^CONFIG_LTO_CLANG' .config | sort
 
       - name: Build kernel (ThinLTO link)
         run: |
