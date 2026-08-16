@@ -50,6 +50,12 @@ jobs:
             --enable KSU_SUSFS_SUS_MAP \
             --enable COMMON_CLK_MT6893 \
             --enable PINCTRL_MT6885 \
+            --enable COMPILE_TEST \
+            --enable MTK_PMIC_WRAP \
+            --enable MFD_MT6397 \
+            --enable REGULATOR_MT6359 \
+            --enable MTK_CMDQ_MBOX \
+            --enable MEDIATEK_WATCHDOG \
             --disable LTO_CLANG_FULL \
             --enable LTO_CLANG_THIN
           make olddefconfig
