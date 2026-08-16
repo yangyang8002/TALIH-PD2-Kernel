@@ -48,6 +48,8 @@ jobs:
             --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
             --enable KSU_SUSFS_OPEN_REDIRECT \
             --enable KSU_SUSFS_SUS_MAP \
+            --enable COMMON_CLK_MT6893 \
+            --enable PINCTRL_MT6885 \
             --disable LTO_CLANG_FULL \
             --enable LTO_CLANG_THIN
           make olddefconfig
