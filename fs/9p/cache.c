@@ -1,23 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * V9FS cache definitions.
  *
  *  Copyright (C) 2009 by Abhishek Kulkarni <adkulkar@umail.iu.edu>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2
- *  as published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to:
- *  Free Software Foundation
- *  51 Franklin Street, Fifth Floor
- *  Boston, MA  02111-1301  USA
- *
  */
 
 #include <linux/jiffies.h>
@@ -34,11 +19,11 @@
 #define CACHETAG_LEN  11
 
 struct fscache_netfs v9fs_cache_netfs = {
-	.name 		= "9p",
-	.version 	= 0,
+	.name		= "9p",
+	.version	= 0,
 };
 
-/**
+/*
  * v9fs_random_cachetag - Generate a random tag to be associated
  *			  with a new cache session.
  *
@@ -248,7 +233,7 @@ static void v9fs_vfs_readpage_complete(struct page *page, void *data,
 	unlock_page(page);
 }
 
-/**
+/*
  * __v9fs_readpage_from_fscache - read a page from cache
  *
  * Returns 0 if the pages are in cache and a BIO is submitted,
@@ -283,7 +268,7 @@ int __v9fs_readpage_from_fscache(struct inode *inode, struct page *page)
 	}
 }
 
-/**
+/*
  * __v9fs_readpages_from_fscache - read multiple pages from cache
  *
  * Returns 0 if the pages are in cache and a BIO is submitted,
@@ -323,7 +308,7 @@ int __v9fs_readpages_from_fscache(struct inode *inode,
 	}
 }
 
-/**
+/*
  * __v9fs_readpage_to_fscache - write a page to the cache
  *
  */

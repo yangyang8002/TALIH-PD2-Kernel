@@ -1,15 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014 MediaTek Inc.
  * Author: Joe.C <yingjoe.chen@mediatek.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/irq.h>
@@ -81,11 +73,6 @@ static int mtk_sysirq_domain_translate(struct irq_domain *d,
 				       unsigned long *hwirq,
 				       unsigned int *type)
 {
-	if (!fwspec || !hwirq || !type) {
-		pr_info("%s invalid args", __func__);
-		return -EINVAL;
-	}
-
 	if (is_of_node(fwspec->fwnode)) {
 		if (fwspec->param_count != 3)
 			return -EINVAL;
@@ -107,16 +94,8 @@ static int mtk_sysirq_domain_alloc(struct irq_domain *domain, unsigned int virq,
 {
 	int i;
 	irq_hw_number_t hwirq;
-	struct irq_fwspec *fwspec;
-	struct irq_fwspec gic_fwspec;
-
-	if (!arg) {
-		pr_info("%s invalid args", __func__);
-		return -EINVAL;
-	}
-
-	fwspec = (struct irq_fwspec *)arg;
-	gic_fwspec = *fwspec;
+	struct irq_fwspec *fwspec = arg;
+	struct irq_fwspec gic_fwspec = *fwspec;
 
 	if (fwspec->param_count != 3)
 		return -EINVAL;

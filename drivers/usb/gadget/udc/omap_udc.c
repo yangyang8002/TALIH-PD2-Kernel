@@ -731,8 +731,6 @@ static void dma_channel_claim(struct omap_ep *ep, unsigned channel)
 		if (status == 0) {
 			omap_writew(reg, UDC_TXDMA_CFG);
 			/* EMIFF or SDRC */
-			omap_set_dma_src_burst_mode(ep->lch,
-						OMAP_DMA_DATA_BURST_4);
 			omap_set_dma_src_data_pack(ep->lch, 1);
 			/* TIPB */
 			omap_set_dma_dest_params(ep->lch,
@@ -754,8 +752,6 @@ static void dma_channel_claim(struct omap_ep *ep, unsigned channel)
 				UDC_DATA_DMA,
 				0, 0);
 			/* EMIFF or SDRC */
-			omap_set_dma_dest_burst_mode(ep->lch,
-						OMAP_DMA_DATA_BURST_4);
 			omap_set_dma_dest_data_pack(ep->lch, 1);
 		}
 	}
@@ -2103,7 +2099,6 @@ done:
 static int omap_udc_stop(struct usb_gadget *g)
 {
 	unsigned long	flags;
-	int		status = -ENODEV;
 
 	if (udc->dc_clk != NULL)
 		omap_udc_enable_clock(1);
@@ -2125,7 +2120,7 @@ static int omap_udc_stop(struct usb_gadget *g)
 	if (udc->dc_clk != NULL)
 		omap_udc_enable_clock(0);
 
-	return status;
+	return 0;
 }
 
 /*-------------------------------------------------------------------------*/
@@ -2554,7 +2549,7 @@ omap_ep_setup(char *name, u8 addr, u8 type,
 
 	/* set up driver data structures */
 	BUG_ON(strlen(name) >= sizeof ep->name);
-	strlcpy(ep->name, name, sizeof ep->name);
+	strscpy(ep->name, name, sizeof(ep->name));
 	INIT_LIST_HEAD(&ep->queue);
 	INIT_LIST_HEAD(&ep->iso);
 	ep->bEndpointAddress = addr;
@@ -2577,7 +2572,7 @@ omap_ep_setup(char *name, u8 addr, u8 type,
 	case USB_ENDPOINT_XFER_INT:
 		ep->ep.caps.type_int = true;
 		break;
-	};
+	}
 
 	if (addr & USB_DIR_IN)
 		ep->ep.caps.dir_in = true;
@@ -2758,7 +2753,7 @@ static int omap_udc_probe(struct platform_device *pdev)
 
 	/* NOTE:  "knows" the order of the resources! */
 	if (!request_mem_region(pdev->resource[0].start,
-			pdev->resource[0].end - pdev->resource[0].start + 1,
+			resource_size(&pdev->resource[0]),
 			driver_name)) {
 		DBG("request_mem_region failed\n");
 		return -EBUSY;
@@ -2832,7 +2827,7 @@ static int omap_udc_probe(struct platform_device *pdev)
 				type = "integrated";
 				break;
 			}
-			/* FALL THROUGH */
+			fallthrough;
 		case 3:
 		case 11:
 		case 16:
@@ -2849,7 +2844,7 @@ static int omap_udc_probe(struct platform_device *pdev)
 		case 14:			/* transceiverless */
 			if (cpu_is_omap1710())
 				goto bad_on_1710;
-			/* FALL THROUGH */
+			fallthrough;
 		case 13:
 		case 15:
 			type = "no";
@@ -2935,7 +2930,7 @@ cleanup0:
 	}
 
 	release_mem_region(pdev->resource[0].start,
-			pdev->resource[0].end - pdev->resource[0].start + 1);
+			   resource_size(&pdev->resource[0]));
 
 	return status;
 }
@@ -2951,7 +2946,7 @@ static int omap_udc_remove(struct platform_device *pdev)
 	wait_for_completion(&done);
 
 	release_mem_region(pdev->resource[0].start,
-			pdev->resource[0].end - pdev->resource[0].start + 1);
+			   resource_size(&pdev->resource[0]));
 
 	return 0;
 }
@@ -3002,7 +2997,7 @@ static struct platform_driver udc_driver = {
 	.suspend	= omap_udc_suspend,
 	.resume		= omap_udc_resume,
 	.driver		= {
-		.name	= (char *) driver_name,
+		.name	= driver_name,
 	},
 };
 

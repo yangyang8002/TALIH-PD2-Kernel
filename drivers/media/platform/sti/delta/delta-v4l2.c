@@ -385,8 +385,8 @@ static int delta_querycap(struct file *file, void *priv,
 	struct delta_ctx *ctx = to_ctx(file->private_data);
 	struct delta_dev *delta = ctx->dev;
 
-	strlcpy(cap->driver, DELTA_NAME, sizeof(cap->driver));
-	strlcpy(cap->card, delta->vdev->name, sizeof(cap->card));
+	strscpy(cap->driver, DELTA_NAME, sizeof(cap->driver));
+	strscpy(cap->card, delta->vdev->name, sizeof(cap->card));
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "platform:%s",
 		 delta->pdev->name);
 
@@ -954,10 +954,8 @@ static void delta_run_work(struct work_struct *work)
 	/* enable the hardware */
 	if (!dec->pm) {
 		ret = delta_get_sync(ctx);
-		if (ret) {
-			delta_put_autosuspend(ctx);
+		if (ret)
 			goto err;
-		}
 	}
 
 	/* decode this access unit */
@@ -1009,7 +1007,6 @@ static void delta_run_work(struct work_struct *work)
 			dev_err(delta->dev,
 				"%s  NULL decoded frame\n",
 				ctx->name);
-			ret = -EIO;
 			goto out;
 		}
 
@@ -1277,9 +1274,9 @@ int delta_get_sync(struct delta_ctx *ctx)
 	int ret = 0;
 
 	/* enable the hardware */
-	ret = pm_runtime_get_sync(delta->dev);
+	ret = pm_runtime_resume_and_get(delta->dev);
 	if (ret < 0) {
-		dev_err(delta->dev, "%s pm_runtime_get_sync failed (%d)\n",
+		dev_err(delta->dev, "%s pm_runtime_resume_and_get failed (%d)\n",
 			__func__, ret);
 		return ret;
 	}
@@ -1783,7 +1780,7 @@ static int delta_register_device(struct delta_dev *delta)
 	snprintf(vdev->name, sizeof(vdev->name), "%s-%s",
 		 DELTA_NAME, DELTA_FW_VERSION);
 
-	ret = video_register_device(vdev, VFL_TYPE_GRABBER, -1);
+	ret = video_register_device(vdev, VFL_TYPE_VIDEO, -1);
 	if (ret) {
 		dev_err(delta->dev, "%s failed to register video device\n",
 			DELTA_PREFIX);
@@ -1862,7 +1859,7 @@ static int delta_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(delta->dev, "%s failed to initialize firmware ipc channel\n",
 			DELTA_PREFIX);
-		goto err;
+		goto err_pm_disable;
 	}
 
 	/* register all available decoders */
@@ -1876,7 +1873,7 @@ static int delta_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(delta->dev, "%s failed to register V4L2 device\n",
 			DELTA_PREFIX);
-		goto err;
+		goto err_pm_disable;
 	}
 
 	delta->work_queue = create_workqueue(DELTA_NAME);
@@ -1901,6 +1898,8 @@ err_work_queue:
 	destroy_workqueue(delta->work_queue);
 err_v4l2:
 	v4l2_device_unregister(&delta->v4l2_dev);
+err_pm_disable:
+	pm_runtime_disable(dev);
 err:
 	return ret;
 }

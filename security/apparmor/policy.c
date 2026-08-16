@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * AppArmor security module
  *
@@ -5,12 +6,6 @@
  *
  * Copyright (C) 1998-2008 Novell/SUSE
  * Copyright 2009-2010 Canonical Ltd.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation, version 2 of the
- * License.
- *
  *
  * AppArmor policy is based around profiles, which contain the rules a
  * task is confined by.  Every task in the system has a profile attached
@@ -151,19 +146,43 @@ static void __list_remove_profile(struct aa_profile *profile)
 }
 
 /**
- * __remove_profile - remove old profile, and children
- * @profile: profile to be replaced  (NOT NULL)
+ * __remove_profile - remove profile, and children
+ * @profile: profile to be removed  (NOT NULL)
  *
  * Requires: namespace list lock be held, or list not be shared
  */
 static void __remove_profile(struct aa_profile *profile)
 {
+	struct aa_profile *curr, *to_remove;
+
 	AA_BUG(!profile);
 	AA_BUG(!profile->ns);
 	AA_BUG(!mutex_is_locked(&profile->ns->lock));
 
 	/* release any children lists first */
-	__aa_profile_list_release(&profile->base.profiles);
+	if (!list_empty(&profile->base.profiles)) {
+		curr = list_first_entry(&profile->base.profiles, struct aa_profile, base.list);
+
+		while (curr != profile) {
+
+			while (!list_empty(&curr->base.profiles))
+				curr = list_first_entry(&curr->base.profiles,
+							struct aa_profile, base.list);
+
+			to_remove = curr;
+			if (!list_is_last(&to_remove->base.list,
+					  &aa_deref_parent(curr)->base.profiles))
+				curr = list_next_entry(to_remove, base.list);
+			else
+				curr = aa_deref_parent(curr);
+
+			/* released by free_profile */
+			aa_label_remove(&to_remove->label);
+			__aafs_profile_rmdir(to_remove);
+			__list_remove_profile(to_remove);
+		}
+	}
+
 	/* released by free_profile */
 	aa_label_remove(&profile->label);
 	__aafs_profile_rmdir(profile);
@@ -192,9 +211,9 @@ static void aa_free_data(void *ptr, void *arg)
 {
 	struct aa_data *data = ptr;
 
-	kzfree(data->data);
-	kzfree(data->key);
-	kzfree(data);
+	kvfree_sensitive(data->data, data->size);
+	kfree_sensitive(data->key);
+	kfree_sensitive(data);
 }
 
 /**
@@ -222,16 +241,19 @@ void aa_free_profile(struct aa_profile *profile)
 	aa_put_profile(rcu_access_pointer(profile->parent));
 
 	aa_put_ns(profile->ns);
-	kzfree(profile->rename);
+	kfree_sensitive(profile->rename);
 
 	aa_free_file_rules(&profile->file);
 	aa_free_cap_rules(&profile->caps);
 	aa_free_rlimit_rules(&profile->rlimits);
 
 	for (i = 0; i < profile->xattr_count; i++)
-		kzfree(profile->xattrs[i]);
-	kzfree(profile->xattrs);
-	kzfree(profile->dirname);
+		kfree_sensitive(profile->xattrs[i]);
+	kfree_sensitive(profile->xattrs);
+	for (i = 0; i < profile->secmark_count; i++)
+		kfree_sensitive(profile->secmark[i].label);
+	kfree_sensitive(profile->secmark);
+	kfree_sensitive(profile->dirname);
 	aa_put_dfa(profile->xmatch);
 	aa_put_dfa(profile->policy.dfa);
 
@@ -239,13 +261,14 @@ void aa_free_profile(struct aa_profile *profile)
 		rht = profile->data;
 		profile->data = NULL;
 		rhashtable_free_and_destroy(rht, aa_free_data, NULL);
-		kzfree(rht);
+		kfree_sensitive(rht);
 	}
 
-	kzfree(profile->hash);
-	aa_put_loaddata(profile->rawdata);
+	kfree_sensitive(profile->hash);
+	aa_put_profile_loaddata(profile->rawdata);
+	aa_label_destroy(&profile->label);
 
-	kzfree(profile);
+	kfree_sensitive(profile);
 }
 
 /**
@@ -584,7 +607,7 @@ static int replacement_allowed(struct aa_profile *profile, int noreplace,
 {
 	if (profile) {
 		if (profile->label.flags & FLAG_IMMUTIBLE) {
-			*info = "cannot replace immutible profile";
+			*info = "cannot replace immutable profile";
 			return -EPERM;
 		} else if (noreplace) {
 			*info = "profile already exists";
@@ -672,14 +695,44 @@ bool policy_admin_capable(struct aa_ns *ns)
 	return policy_view_capable(ns) && capable && !aa_g_lock_policy;
 }
 
+static bool is_subset_of_obj_privilege(const struct cred *cred,
+				       struct aa_label *label,
+				       const struct cred *ocred)
+{
+	if (cred == ocred)
+		return true;
+
+	if (!aa_label_is_subset(label, cred_label(ocred)))
+		return false;
+	/* don't allow crossing userns for now */
+	if (cred->user_ns != ocred->user_ns)
+		return false;
+	if (!cap_issubset(cred->cap_inheritable, ocred->cap_inheritable))
+		return false;
+	if (!cap_issubset(cred->cap_permitted, ocred->cap_permitted))
+		return false;
+	if (!cap_issubset(cred->cap_effective, ocred->cap_effective))
+		return false;
+	if (!cap_issubset(cred->cap_bset, ocred->cap_bset))
+		return false;
+	if (!cap_issubset(cred->cap_ambient, ocred->cap_ambient))
+		return false;
+	return true;
+}
+
+
 /**
  * aa_may_manage_policy - can the current task manage policy
+ * @subj_cred; subjects cred
  * @label: label to check if it can manage policy
- * @op: the policy manipulation operation being done
+ * @ns: namespace being managed by @label (may be NULL if @label's ns)
+ * @ocred: object cred if request is coming from an open object
+ * @mask: contains the policy manipulation operation being done
  *
  * Returns: 0 if the task is allowed to manipulate policy else error
  */
-int aa_may_manage_policy(struct aa_label *label, struct aa_ns *ns, u32 mask)
+int aa_may_manage_policy(const struct cred *subj_cred, struct aa_label *label,
+			 struct aa_ns *ns, const struct cred *ocred, u32 mask)
 {
 	const char *op;
 
@@ -693,6 +746,11 @@ int aa_may_manage_policy(struct aa_label *label, struct aa_ns *ns, u32 mask)
 	/* check if loading policy is locked out */
 	if (aa_g_lock_policy)
 		return audit_policy(label, op, NULL, NULL, "policy_locked",
+				    -EACCES);
+
+	if (ocred && !is_subset_of_obj_privilege(subj_cred, label, ocred))
+		return audit_policy(label, op, NULL, NULL,
+				    "not privileged for target profile",
 				    -EACCES);
 
 	if (!policy_admin_capable(ns))
@@ -858,7 +916,7 @@ static struct aa_profile *update_to_newest_parent(struct aa_profile *new)
 ssize_t aa_replace_profiles(struct aa_ns *policy_ns, struct aa_label *label,
 			    u32 mask, struct aa_loaddata *udata)
 {
-	const char *ns_name, *info = NULL;
+	const char *ns_name = NULL, *info = NULL;
 	struct aa_ns *ns = NULL;
 	struct aa_load_ent *ent, *tmp;
 	struct aa_loaddata *rawdata_ent;
@@ -867,7 +925,7 @@ ssize_t aa_replace_profiles(struct aa_ns *policy_ns, struct aa_label *label,
 	LIST_HEAD(lh);
 
 	op = mask & AA_MAY_REPLACE_POLICY ? OP_PROF_REPL : OP_PROF_LOAD;
-	aa_get_loaddata(udata);
+	aa_get_profile_loaddata(udata);
 	/* released below */
 	error = aa_unpack(udata, &lh, &ns_name);
 	if (error)
@@ -894,6 +952,7 @@ ssize_t aa_replace_profiles(struct aa_ns *policy_ns, struct aa_label *label,
 				goto fail;
 			}
 			ns_name = ent->ns_name;
+			ent->ns_name = NULL;
 		} else
 			count++;
 	}
@@ -917,10 +976,10 @@ ssize_t aa_replace_profiles(struct aa_ns *policy_ns, struct aa_label *label,
 		if (aa_rawdata_eq(rawdata_ent, udata)) {
 			struct aa_loaddata *tmp;
 
-			tmp = __aa_get_loaddata(rawdata_ent);
+			tmp = aa_get_profile_loaddata(rawdata_ent);
 			/* check we didn't fail the race */
 			if (tmp) {
-				aa_put_loaddata(udata);
+				aa_put_profile_loaddata(udata);
 				udata = tmp;
 				break;
 			}
@@ -930,7 +989,7 @@ ssize_t aa_replace_profiles(struct aa_ns *policy_ns, struct aa_label *label,
 	list_for_each_entry(ent, &lh, list) {
 		struct aa_policy *policy;
 
-		ent->new->rawdata = aa_get_loaddata(udata);
+		ent->new->rawdata = aa_get_profile_loaddata(udata);
 		error = __lookup_replace(ns, ent->new->base.hname,
 					 !(mask & AA_MAY_REPLACE_POLICY),
 					 &ent->old, &info);
@@ -1044,7 +1103,8 @@ ssize_t aa_replace_profiles(struct aa_ns *policy_ns, struct aa_label *label,
 
 out:
 	aa_put_ns(ns);
-	aa_put_loaddata(udata);
+	aa_put_profile_loaddata(udata);
+	kfree(ns_name);
 
 	if (error)
 		return error;
@@ -1125,7 +1185,7 @@ ssize_t aa_remove_profiles(struct aa_ns *policy_ns, struct aa_label *subj,
 
 	if (!name) {
 		/* remove namespace - can only happen if fqname[0] == ':' */
-		mutex_lock_nested(&ns->parent->lock, ns->level);
+		mutex_lock_nested(&ns->parent->lock, ns->parent->level);
 		__aa_bump_ns_revision(ns);
 		__aa_remove_ns(ns);
 		mutex_unlock(&ns->parent->lock);

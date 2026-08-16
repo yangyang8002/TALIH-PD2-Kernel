@@ -12,7 +12,7 @@
  * Fix bug in inverse translation. Stanislav Voronyi <stas@cnti.uanet.kharkov.ua>, Dec 1998
  *
  * In order to prevent the following circular lock dependency:
- *   &mm->mmap_sem --> cpu_hotplug.lock --> console_lock --> &mm->mmap_sem
+ *   &mm->mmap_lock --> cpu_hotplug.lock --> console_lock --> &mm->mmap_lock
  *
  * We cannot allow page fault to happen while holding the console_lock.
  * Therefore, all the userspace copy operations have to be done outside
@@ -186,17 +186,26 @@ static unsigned short translations[][256] = {
 
 static int inv_translate[MAX_NR_CONSOLES];
 
-struct uni_pagedir {
-	u16 		**uni_pgdir[32];
+/**
+ * struct uni_pagedict -- unicode directory
+ *
+ * @uni_pgdir: 32*32*64 table with glyphs
+ * @refcount: reference count of this structure
+ * @sum: checksum
+ * @inverse_translations: best-effort inverse mapping
+ * @inverse_trans_unicode: best-effort inverse mapping to unicode
+ */
+struct uni_pagedict {
+	u16		**uni_pgdir[32];
 	unsigned long	refcount;
 	unsigned long	sum;
 	unsigned char	*inverse_translations[4];
 	u16		*inverse_trans_unicode;
 };
 
-static struct uni_pagedir *dflt;
+static struct uni_pagedict *dflt;
 
-static void set_inverse_transl(struct vc_data *conp, struct uni_pagedir *p, int i)
+static void set_inverse_transl(struct vc_data *conp, struct uni_pagedict *p, int i)
 {
 	int j, glyph;
 	unsigned short *t = translations[i];
@@ -221,7 +230,7 @@ static void set_inverse_transl(struct vc_data *conp, struct uni_pagedir *p, int 
 }
 
 static void set_inverse_trans_unicode(struct vc_data *conp,
-				      struct uni_pagedir *p)
+				      struct uni_pagedict *p)
 {
 	int i, j, k, glyph;
 	u16 **p1, *p2;
@@ -268,9 +277,9 @@ unsigned short *set_translate(int m, struct vc_data *vc)
  *    was active.
  * Still, it is now possible to a certain extent to cut and paste non-ASCII.
  */
-u16 inverse_translate(struct vc_data *conp, int glyph, int use_unicode)
+u16 inverse_translate(const struct vc_data *conp, int glyph, int use_unicode)
 {
-	struct uni_pagedir *p;
+	struct uni_pagedict *p;
 	int m;
 	if (glyph < 0 || glyph >= MAX_GLYPH)
 		return 0;
@@ -297,7 +306,7 @@ EXPORT_SYMBOL_GPL(inverse_translate);
 static void update_user_maps(void)
 {
 	int i;
-	struct uni_pagedir *p, *q = NULL;
+	struct uni_pagedict *p, *q = NULL;
 	
 	for (i = 0; i < MAX_NR_CONSOLES; i++) {
 		if (!vc_cons_allocated(i))
@@ -393,7 +402,7 @@ int con_get_trans_new(ushort __user * arg)
 extern u8 dfont_unicount[];	/* Defined in console_defmap.c */
 extern u16 dfont_unitable[];
 
-static void con_release_unimap(struct uni_pagedir *p)
+static void con_release_unimap(struct uni_pagedict *p)
 {
 	u16 **p1;
 	int i, j;
@@ -419,7 +428,7 @@ static void con_release_unimap(struct uni_pagedir *p)
 /* Caller must hold the console lock */
 void con_free_unimap(struct vc_data *vc)
 {
-	struct uni_pagedir *p;
+	struct uni_pagedict *p;
 
 	p = *vc->vc_uni_pagedir_loc;
 	if (!p)
@@ -431,10 +440,10 @@ void con_free_unimap(struct vc_data *vc)
 	kfree(p);
 }
   
-static int con_unify_unimap(struct vc_data *conp, struct uni_pagedir *p)
+static int con_unify_unimap(struct vc_data *conp, struct uni_pagedict *p)
 {
 	int i, j, k;
-	struct uni_pagedir *q;
+	struct uni_pagedict *q;
 	
 	for (i = 0; i < MAX_NR_CONSOLES; i++) {
 		if (!vc_cons_allocated(i))
@@ -472,7 +481,7 @@ static int con_unify_unimap(struct vc_data *conp, struct uni_pagedir *p)
 }
 
 static int
-con_insert_unipair(struct uni_pagedir *p, u_short unicode, u_short fontpos)
+con_insert_unipair(struct uni_pagedict *p, u_short unicode, u_short fontpos)
 {
 	int i, n;
 	u16 **p1, *p2;
@@ -503,7 +512,7 @@ con_insert_unipair(struct uni_pagedir *p, u_short unicode, u_short fontpos)
 /* Caller must hold the lock */
 static int con_do_clear_unimap(struct vc_data *vc)
 {
-	struct uni_pagedir *p, *q;
+	struct uni_pagedict *p, *q;
 
 	p = *vc->vc_uni_pagedir_loc;
 	if (!p || --p->refcount) {
@@ -536,13 +545,13 @@ int con_clear_unimap(struct vc_data *vc)
 int con_set_unimap(struct vc_data *vc, ushort ct, struct unipair __user *list)
 {
 	int err = 0, err1, i;
-	struct uni_pagedir *p, *q;
+	struct uni_pagedict *p, *q;
 	struct unipair *unilist, *plist;
 
 	if (!ct)
 		return 0;
 
-	unilist = memdup_user(list, ct * sizeof(struct unipair));
+	unilist = vmemdup_user(list, array_size(sizeof(struct unipair), ct));
 	if (IS_ERR(unilist))
 		return PTR_ERR(unilist);
 
@@ -569,7 +578,7 @@ int con_set_unimap(struct vc_data *vc, ushort ct, struct unipair __user *list)
 		
 		/*
 		 * Since refcount was > 1, con_clear_unimap() allocated a
-		 * a new uni_pagedir for this vc.  Re: p != q
+		 * a new uni_pagedict for this vc.  Re: p != q
 		 */
 		q = *vc->vc_uni_pagedir_loc;
 
@@ -641,7 +650,7 @@ int con_set_unimap(struct vc_data *vc, ushort ct, struct unipair __user *list)
 
 out_unlock:
 	console_unlock();
-	kfree(unilist);
+	kvfree(unilist);
 	return err;
 }
 
@@ -660,7 +669,7 @@ int con_set_default_unimap(struct vc_data *vc)
 {
 	int i, j, err = 0, err1;
 	u16 *q;
-	struct uni_pagedir *p;
+	struct uni_pagedict *p;
 
 	if (dflt) {
 		p = *vc->vc_uni_pagedir_loc;
@@ -708,13 +717,13 @@ EXPORT_SYMBOL(con_set_default_unimap);
 /**
  *	con_copy_unimap		-	copy unimap between two vts
  *	@dst_vc: target
- *	@src_vt: source
+ *	@src_vc: source
  *
  *	The caller must hold the console lock when invoking this method
  */
 int con_copy_unimap(struct vc_data *dst_vc, struct vc_data *src_vc)
 {
-	struct uni_pagedir *q;
+	struct uni_pagedict *q;
 
 	if (!*src_vc->vc_uni_pagedir_loc)
 		return -EINVAL;
@@ -728,9 +737,8 @@ int con_copy_unimap(struct vc_data *dst_vc, struct vc_data *src_vc)
 }
 EXPORT_SYMBOL(con_copy_unimap);
 
-/**
+/*
  *	con_get_unimap		-	get the unicode map
- *	@vc: the console to read from
  *
  *	Read the console unicode data for this console. Called from the ioctl
  *	handlers.
@@ -740,10 +748,10 @@ int con_get_unimap(struct vc_data *vc, ushort ct, ushort __user *uct, struct uni
 	int i, j, k, ret = 0;
 	ushort ect;
 	u16 **p1, *p2;
-	struct uni_pagedir *p;
+	struct uni_pagedict *p;
 	struct unipair *unilist;
 
-	unilist = kmalloc_array(ct, sizeof(struct unipair), GFP_KERNEL);
+	unilist = kvmalloc_array(ct, sizeof(struct unipair), GFP_KERNEL);
 	if (!unilist)
 		return -ENOMEM;
 
@@ -775,7 +783,7 @@ int con_get_unimap(struct vc_data *vc, ushort ct, ushort __user *uct, struct uni
 	if (copy_to_user(list, unilist, min(ect, ct) * sizeof(struct unipair)))
 		ret = -EFAULT;
 	put_user(ect, uct);
-	kfree(unilist);
+	kvfree(unilist);
 	return ret ? ret : (ect <= ct) ? 0 : -ENOMEM;
 }
 
@@ -811,7 +819,7 @@ conv_uni_to_pc(struct vc_data *conp, long ucs)
 {
 	int h;
 	u16 **p1, *p2;
-	struct uni_pagedir *p;
+	struct uni_pagedict *p;
   
 	/* Only 16-bit codes supported at this time */
 	if (ucs > 0xffff)

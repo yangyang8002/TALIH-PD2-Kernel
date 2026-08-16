@@ -52,7 +52,7 @@
  * Function prototypes
  */
 static int klsi_105_port_probe(struct usb_serial_port *port);
-static int klsi_105_port_remove(struct usb_serial_port *port);
+static void klsi_105_port_remove(struct usb_serial_port *port);
 static int  klsi_105_open(struct tty_struct *tty, struct usb_serial_port *port);
 static void klsi_105_close(struct usb_serial_port *port);
 static void klsi_105_set_termios(struct tty_struct *tty,
@@ -231,14 +231,12 @@ static int klsi_105_port_probe(struct usb_serial_port *port)
 	return 0;
 }
 
-static int klsi_105_port_remove(struct usb_serial_port *port)
+static void klsi_105_port_remove(struct usb_serial_port *port)
 {
 	struct klsi_105_private *priv;
 
 	priv = usb_get_serial_port_data(port);
 	kfree(priv);
-
-	return 0;
 }
 
 static int  klsi_105_open(struct tty_struct *tty, struct usb_serial_port *port)
@@ -359,8 +357,8 @@ static int klsi_105_prepare_write_buffer(struct usb_serial_port *port,
 	unsigned char *buf = dest;
 	int count;
 
-	count = kfifo_out_locked(&port->write_fifo, buf + KLSI_HDR_LEN, size,
-								&port->lock);
+	count = kfifo_out_locked(&port->write_fifo, buf + KLSI_HDR_LEN,
+				 size - KLSI_HDR_LEN, &port->lock);
 	put_unaligned_le16(count, buf);
 
 	return count + KLSI_HDR_LEN;

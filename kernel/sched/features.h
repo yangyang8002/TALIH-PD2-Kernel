@@ -27,7 +27,7 @@ SCHED_FEAT(NEXT_BUDDY, false)
 SCHED_FEAT(LAST_BUDDY, true)
 
 /*
- * Consider buddies to be cache hot, decreases the likelyness of a
+ * Consider buddies to be cache hot, decreases the likeliness of a
  * cache buddy being migrated away, increases cache locality.
  */
 SCHED_FEAT(CACHE_HOT_BUDDY, true)
@@ -38,8 +38,8 @@ SCHED_FEAT(CACHE_HOT_BUDDY, true)
 SCHED_FEAT(WAKEUP_PREEMPTION, true)
 
 SCHED_FEAT(HRTICK, false)
+SCHED_FEAT(HRTICK_DL, false)
 SCHED_FEAT(DOUBLE_TICK, false)
-SCHED_FEAT(LB_BIAS, true)
 
 /*
  * Decrement CPU capacity based on time not spent running tasks
@@ -55,7 +55,6 @@ SCHED_FEAT(TTWU_QUEUE, true)
 /*
  * When doing wakeups, attempt to limit superfluous scans of the LLC domain.
  */
-SCHED_FEAT(SIS_AVG_CPU, false)
 SCHED_FEAT(SIS_PROP, true)
 
 /*
@@ -92,42 +91,7 @@ SCHED_FEAT(WA_BIAS, true)
 SCHED_FEAT(UTIL_EST, true)
 SCHED_FEAT(UTIL_EST_FASTUP, true)
 
-/*
- * Utilization clamping lazy update.
- */
-SCHED_FEAT(UCLAMP_LAZY_UPDATE, false)
+SCHED_FEAT(LATENCY_WARN, false)
 
-/*
- * Fast pre-selection of CPU candidates for EAS.
- */
-SCHED_FEAT(FIND_BEST_TARGET, false)
-
-/*
- * Energy aware scheduling algorithm choices:
- * EAS_PREFER_IDLE
- *   Direct tasks in a schedtune.prefer_idle=1 group through
- *   the EAS path for wakeup task placement. Otherwise, put
- *   those tasks through the mainline slow path.
- */
-SCHED_FEAT(EAS_PREFER_IDLE, true)
-#ifdef CONFIG_MTK_SCHED_LB_ENHANCEMENT
-SCHED_FEAT(SCHED_MTK_EAS, true)
-#else
-SCHED_FEAT(SCHED_MTK_EAS, false)
-#endif
-
-/*
- * Request max frequency from schedutil whenever a RT task is running.
- */
-SCHED_FEAT(SUGOV_RT_MAX_FREQ, false)
-
-/*
- * Apply schedtune boost hold to tasks of all sched classes.
- * If enabled, schedtune will hold the boost applied to a CPU
- * for 50ms regardless of task activation - if the task is
- * still running 50ms later, the boost hold expires and schedtune
- * boost will expire immediately the task stops.
- * If disabled, this behaviour will only apply to tasks of the
- * RT class.
- */
-SCHED_FEAT(SCHEDTUNE_BOOST_HOLD_ALL, false)
+SCHED_FEAT(ALT_PERIOD, true)
+SCHED_FEAT(BASE_SLICE, true)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * drivers/power/process.c - Functions for starting/stopping processes on 
+ * drivers/power/process.c - Functions for starting/stopping processes on
  *                           suspend transitions.
  *
  * Originally from swsusp.
@@ -23,6 +23,8 @@
 #include <trace/events/power.h>
 #include <linux/cpuset.h>
 
+#include <trace/hooks/power.h>
+
 /*
  * Timeout for stopping processes
  */
@@ -38,6 +40,7 @@ static int try_to_freeze_tasks(bool user_only)
 	unsigned int elapsed_msecs;
 	bool wakeup = false;
 	int sleep_usecs = USEC_PER_MSEC;
+	bool todo_logging_on = false;
 
 	start = ktime_get_boottime();
 
@@ -97,15 +100,22 @@ static int try_to_freeze_tasks(bool user_only)
 		       todo - wq_busy, wq_busy);
 
 		if (wq_busy)
-			show_workqueue_state();
+			show_all_workqueues();
 
-		read_lock(&tasklist_lock);
-		for_each_process_thread(g, p) {
-			if (p != current && !freezer_should_skip(p)
-			    && freezing(p) && !frozen(p))
-				sched_show_task(p);
+		trace_android_vh_try_to_freeze_todo_logging(&todo_logging_on);
+		if (pm_debug_messages_on || todo_logging_on) {
+			read_lock(&tasklist_lock);
+			for_each_process_thread(g, p) {
+				if (p != current && !freezer_should_skip(p)
+				    && freezing(p) && !frozen(p)) {
+					sched_show_task(p);
+					trace_android_vh_try_to_freeze_todo_unfrozen(p);
+				}
+			}
+			read_unlock(&tasklist_lock);
 		}
-		read_unlock(&tasklist_lock);
+
+		trace_android_vh_try_to_freeze_todo(todo, elapsed_msecs, wq_busy);
 	} else {
 		pr_cont("(elapsed %d.%03d seconds) ", elapsed_msecs / 1000,
 			elapsed_msecs % 1000);
@@ -135,7 +145,7 @@ int freeze_processes(void)
 	if (!pm_freezing)
 		atomic_inc(&system_freezing_cnt);
 
-	pm_wakeup_clear(true);
+	pm_wakeup_clear(0);
 	pr_info("Freezing user space processes ... ");
 	pm_freezing = true;
 	error = try_to_freeze_tasks(true);
@@ -147,7 +157,7 @@ int freeze_processes(void)
 	BUG_ON(in_atomic());
 
 	/*
-	 * Now that the whole userspace is frozen we need to disbale
+	 * Now that the whole userspace is frozen we need to disable
 	 * the OOM killer to disallow any further interference with
 	 * killable tasks. There is no guarantee oom victims will
 	 * ever reach a point they go away we have to wait with a timeout.
@@ -236,7 +246,7 @@ void thaw_kernel_threads(void)
 
 	read_lock(&tasklist_lock);
 	for_each_process_thread(g, p) {
-		if (p->flags & (PF_KTHREAD | PF_WQ_WORKER))
+		if (p->flags & PF_KTHREAD)
 			__thaw_task(p);
 	}
 	read_unlock(&tasklist_lock);

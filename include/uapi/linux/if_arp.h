@@ -54,6 +54,7 @@
 #define ARPHRD_X25	271		/* CCITT X.25			*/
 #define ARPHRD_HWX25	272		/* Boards with X.25 in firmware	*/
 #define ARPHRD_CAN	280		/* Controller Area Network      */
+#define ARPHRD_MCTP	290
 #define ARPHRD_PPP	512
 #define ARPHRD_CISCO	513		/* Cisco HDLC	 		*/
 #define ARPHRD_HDLC	ARPHRD_CISCO
@@ -61,7 +62,7 @@
 #define ARPHRD_DDCMP    517		/* Digital's DDCMP protocol     */
 #define ARPHRD_RAWHDLC	518		/* Raw HDLC			*/
 #define ARPHRD_RAWIP    519		/* Raw IP                       */
-#define ARPHRD_PUREIP   520		/* PURE IP       */
+
 #define ARPHRD_TUNNEL	768		/* IPIP tunnel			*/
 #define ARPHRD_TUNNEL6	769		/* IP6IP6 tunnel       		*/
 #define ARPHRD_FRAD	770             /* Frame Relay Access Device    */
@@ -114,18 +115,18 @@
 
 /* ARP ioctl request. */
 struct arpreq {
-  struct sockaddr	arp_pa;		/* protocol address		*/
-  struct sockaddr	arp_ha;		/* hardware address		*/
-  int			arp_flags;	/* flags			*/
-  struct sockaddr       arp_netmask;    /* netmask (only for proxy arps) */
-  char			arp_dev[16];
+	struct sockaddr	arp_pa;		/* protocol address		 */
+	struct sockaddr	arp_ha;		/* hardware address		 */
+	int		arp_flags;	/* flags			 */
+	struct sockaddr arp_netmask;    /* netmask (only for proxy arps) */
+	char		arp_dev[IFNAMSIZ];
 };
 
 struct arpreq_old {
-  struct sockaddr	arp_pa;		/* protocol address		*/
-  struct sockaddr	arp_ha;		/* hardware address		*/
-  int			arp_flags;	/* flags			*/
-  struct sockaddr       arp_netmask;    /* netmask (only for proxy arps) */
+	struct sockaddr	arp_pa;		/* protocol address		 */
+	struct sockaddr	arp_ha;		/* hardware address		 */
+	int		arp_flags;	/* flags			 */
+	struct sockaddr	arp_netmask;    /* netmask (only for proxy arps) */
 };
 
 /* ARP Flag values. */

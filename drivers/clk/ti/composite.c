@@ -125,6 +125,7 @@ static void __init _register_composite(void *user,
 	struct component_clk *comp;
 	int num_parents = 0;
 	const char **parent_names = NULL;
+	const char *name;
 	int i;
 	int ret;
 
@@ -135,8 +136,8 @@ static void __init _register_composite(void *user,
 
 		comp = _lookup_component(cclk->comp_nodes[i]);
 		if (!comp) {
-			pr_debug("component %s not ready for %s, retry\n",
-				 cclk->comp_nodes[i]->name, node->name);
+			pr_debug("component %s not ready for %pOFn, retry\n",
+				 cclk->comp_nodes[i]->name, node);
 			if (!ti_clk_retry_init(node, hw,
 					       _register_composite))
 				return;
@@ -144,8 +145,8 @@ static void __init _register_composite(void *user,
 			goto cleanup;
 		}
 		if (cclk->comp_clks[comp->type] != NULL) {
-			pr_err("duplicate component types for %s (%s)!\n",
-			       node->name, component_clk_types[comp->type]);
+			pr_err("duplicate component types for %pOFn (%s)!\n",
+			       node, component_clk_types[comp->type]);
 			goto cleanup;
 		}
 
@@ -168,11 +169,12 @@ static void __init _register_composite(void *user,
 	}
 
 	if (!num_parents) {
-		pr_err("%s: no parents found for %s!\n", __func__, node->name);
+		pr_err("%s: no parents found for %pOFn!\n", __func__, node);
 		goto cleanup;
 	}
 
-	clk = clk_register_composite(NULL, node->name,
+	name = ti_dt_clk_name(node);
+	clk = clk_register_composite(NULL, name,
 				     parent_names, num_parents,
 				     _get_hw(cclk, CLK_COMPONENT_TYPE_MUX),
 				     &ti_clk_mux_ops,
@@ -182,7 +184,7 @@ static void __init _register_composite(void *user,
 				     &ti_composite_gate_ops, 0);
 
 	if (!IS_ERR(clk)) {
-		ret = ti_clk_add_alias(NULL, clk, node->name);
+		ret = ti_clk_add_alias(clk, name);
 		if (ret) {
 			clk_unregister(clk);
 			goto cleanup;
@@ -213,7 +215,7 @@ static void __init of_ti_composite_clk_setup(struct device_node *node)
 	num_clks = of_clk_get_parent_count(node);
 
 	if (!num_clks) {
-		pr_err("composite clk %s must have component(s)\n", node->name);
+		pr_err("composite clk %pOFn must have component(s)\n", node);
 		return;
 	}
 
@@ -249,7 +251,7 @@ int __init ti_clk_add_component(struct device_node *node, struct clk_hw *hw,
 	num_parents = of_clk_get_parent_count(node);
 
 	if (!num_parents) {
-		pr_err("component-clock %s must have parent(s)\n", node->name);
+		pr_err("component-clock %pOFn must have parent(s)\n", node);
 		return -EINVAL;
 	}
 

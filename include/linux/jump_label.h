@@ -68,7 +68,7 @@
  * Lacking toolchain and or architecture support, static keys fall back to a
  * simple conditional branch.
  *
- * Additional babbling in: Documentation/static-keys.txt
+ * Additional babbling in: Documentation/staging/static-keys.rst
  */
 
 #ifndef __ASSEMBLY__
@@ -113,8 +113,82 @@ struct static_key {
 #endif	/* CONFIG_JUMP_LABEL */
 #endif /* __ASSEMBLY__ */
 
-#ifdef CONFIG_JUMP_LABEL
+#if defined(CONFIG_JUMP_LABEL) && !defined(BUILD_FIPS140_KO)
 #include <asm/jump_label.h>
+
+#ifndef __ASSEMBLY__
+#ifdef CONFIG_HAVE_ARCH_JUMP_LABEL_RELATIVE
+
+struct jump_entry {
+	s32 code;
+	s32 target;
+	long key;	// key may be far away from the core kernel under KASLR
+};
+
+static inline unsigned long jump_entry_code(const struct jump_entry *entry)
+{
+	return (unsigned long)&entry->code + entry->code;
+}
+
+static inline unsigned long jump_entry_target(const struct jump_entry *entry)
+{
+	return (unsigned long)&entry->target + entry->target;
+}
+
+static inline struct static_key *jump_entry_key(const struct jump_entry *entry)
+{
+	long offset = entry->key & ~3L;
+
+	return (struct static_key *)((unsigned long)&entry->key + offset);
+}
+
+#else
+
+static inline unsigned long jump_entry_code(const struct jump_entry *entry)
+{
+	return entry->code;
+}
+
+static inline unsigned long jump_entry_target(const struct jump_entry *entry)
+{
+	return entry->target;
+}
+
+static inline struct static_key *jump_entry_key(const struct jump_entry *entry)
+{
+	return (struct static_key *)((unsigned long)entry->key & ~3UL);
+}
+
+#endif
+
+static inline bool jump_entry_is_branch(const struct jump_entry *entry)
+{
+	return (unsigned long)entry->key & 1UL;
+}
+
+static inline bool jump_entry_is_init(const struct jump_entry *entry)
+{
+	return (unsigned long)entry->key & 2UL;
+}
+
+static inline void jump_entry_set_init(struct jump_entry *entry, bool set)
+{
+	if (set)
+		entry->key |= 2;
+	else
+		entry->key &= ~2;
+}
+
+static inline int jump_entry_size(struct jump_entry *entry)
+{
+#ifdef JUMP_LABEL_NOP_SIZE
+	return JUMP_LABEL_NOP_SIZE;
+#else
+	return arch_jump_entry_size(entry);
+#endif
+}
+
+#endif
 #endif
 
 #ifndef __ASSEMBLY__
@@ -126,7 +200,30 @@ enum jump_label_type {
 
 struct module;
 
-#ifdef CONFIG_JUMP_LABEL
+#ifdef BUILD_FIPS140_KO
+
+#include <linux/atomic.h>
+
+static inline int static_key_count(struct static_key *key)
+{
+	return atomic_read(&key->enabled);
+}
+
+static __always_inline bool static_key_false(struct static_key *key)
+{
+	if (unlikely(static_key_count(key) > 0))
+		return true;
+	return false;
+}
+
+static __always_inline bool static_key_true(struct static_key *key)
+{
+	if (likely(static_key_count(key) > 0))
+		return true;
+	return false;
+}
+
+#elif defined(CONFIG_JUMP_LABEL)
 
 #define JUMP_TYPE_FALSE		0UL
 #define JUMP_TYPE_TRUE		1UL
@@ -147,13 +244,15 @@ extern struct jump_entry __start___jump_table[];
 extern struct jump_entry __stop___jump_table[];
 
 extern void jump_label_init(void);
-extern void jump_label_invalidate_initmem(void);
 extern void jump_label_lock(void);
 extern void jump_label_unlock(void);
 extern void arch_jump_label_transform(struct jump_entry *entry,
 				      enum jump_label_type type);
 extern void arch_jump_label_transform_static(struct jump_entry *entry,
 					     enum jump_label_type type);
+extern bool arch_jump_label_transform_queue(struct jump_entry *entry,
+					    enum jump_label_type type);
+extern void arch_jump_label_transform_apply(void);
 extern int jump_label_text_reserved(void *start, void *end);
 extern void static_key_slow_inc(struct static_key *key);
 extern void static_key_slow_dec(struct static_key *key);
@@ -185,9 +284,9 @@ extern void static_key_disable_cpuslocked(struct static_key *key);
 #include <linux/atomic.h>
 #include <linux/bug.h>
 
-static inline int static_key_count(struct static_key *key)
+static __always_inline int static_key_count(struct static_key *key)
 {
-	return atomic_read(&key->enabled);
+	return arch_atomic_read(&key->enabled);
 }
 
 static __always_inline void jump_label_init(void)
@@ -195,18 +294,16 @@ static __always_inline void jump_label_init(void)
 	static_key_initialized = true;
 }
 
-static inline void jump_label_invalidate_initmem(void) {}
-
 static __always_inline bool static_key_false(struct static_key *key)
 {
-	if (unlikely(static_key_count(key) > 0))
+	if (unlikely_notrace(static_key_count(key) > 0))
 		return true;
 	return false;
 }
 
 static __always_inline bool static_key_true(struct static_key *key)
 {
-	if (likely(static_key_count(key) > 0))
+	if (likely_notrace(static_key_count(key) > 0))
 		return true;
 	return false;
 }
@@ -320,6 +417,21 @@ struct static_key_false {
 		[0 ... (count) - 1] = STATIC_KEY_FALSE_INIT,	\
 	}
 
+#define _DEFINE_STATIC_KEY_1(name)	DEFINE_STATIC_KEY_TRUE(name)
+#define _DEFINE_STATIC_KEY_0(name)	DEFINE_STATIC_KEY_FALSE(name)
+#define DEFINE_STATIC_KEY_MAYBE(cfg, name)			\
+	__PASTE(_DEFINE_STATIC_KEY_, IS_ENABLED(cfg))(name)
+
+#define _DEFINE_STATIC_KEY_RO_1(name)	DEFINE_STATIC_KEY_TRUE_RO(name)
+#define _DEFINE_STATIC_KEY_RO_0(name)	DEFINE_STATIC_KEY_FALSE_RO(name)
+#define DEFINE_STATIC_KEY_MAYBE_RO(cfg, name)			\
+	__PASTE(_DEFINE_STATIC_KEY_RO_, IS_ENABLED(cfg))(name)
+
+#define _DECLARE_STATIC_KEY_1(name)	DECLARE_STATIC_KEY_TRUE(name)
+#define _DECLARE_STATIC_KEY_0(name)	DECLARE_STATIC_KEY_FALSE(name)
+#define DECLARE_STATIC_KEY_MAYBE(cfg, name)			\
+	__PASTE(_DECLARE_STATIC_KEY_, IS_ENABLED(cfg))(name)
+
 extern bool ____wrong_branch_error(void);
 
 #define static_key_enabled(x)							\
@@ -331,7 +443,7 @@ extern bool ____wrong_branch_error(void);
 	static_key_count((struct static_key *)x) > 0;				\
 })
 
-#ifdef CONFIG_JUMP_LABEL
+#if defined(CONFIG_JUMP_LABEL) && !defined(BUILD_FIPS140_KO)
 
 /*
  * Combine the right initial value (type) with the right branch order
@@ -398,7 +510,7 @@ extern bool ____wrong_branch_error(void);
 		branch = !arch_static_branch_jump(&(x)->key, true);		\
 	else									\
 		branch = ____wrong_branch_error();				\
-	likely(branch);								\
+	likely_notrace(branch);								\
 })
 
 #define static_branch_unlikely(x)						\
@@ -410,15 +522,19 @@ extern bool ____wrong_branch_error(void);
 		branch = arch_static_branch(&(x)->key, false);			\
 	else									\
 		branch = ____wrong_branch_error();				\
-	unlikely(branch);							\
+	unlikely_notrace(branch);							\
 })
 
 #else /* !CONFIG_JUMP_LABEL */
 
-#define static_branch_likely(x)		likely(static_key_enabled(&(x)->key))
-#define static_branch_unlikely(x)	unlikely(static_key_enabled(&(x)->key))
+#define static_branch_likely(x)		likely_notrace(static_key_enabled(&(x)->key))
+#define static_branch_unlikely(x)	unlikely_notrace(static_key_enabled(&(x)->key))
 
 #endif /* CONFIG_JUMP_LABEL */
+
+#define static_branch_maybe(config, x)					\
+	(IS_ENABLED(config) ? static_branch_likely(x)			\
+			    : static_branch_unlikely(x))
 
 /*
  * Advanced usage; refcount, branch is enabled when: count != 0

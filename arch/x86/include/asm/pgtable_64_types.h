@@ -40,6 +40,9 @@ static inline bool pgtable_l5_enabled(void)
 #define pgtable_l5_enabled() 0
 #endif /* CONFIG_X86_5LEVEL */
 
+#define ARCH_PAGE_TABLE_SYNC_MASK \
+	(pgtable_l5_enabled() ? PGTBL_PGD_MODIFIED : PGTBL_P4D_MODIFIED)
+
 extern unsigned int pgdir_shift;
 extern unsigned int ptrs_per_p4d;
 
@@ -103,7 +106,7 @@ extern unsigned int ptrs_per_p4d;
 #define PGDIR_MASK	(~(PGDIR_SIZE - 1))
 
 /*
- * See Documentation/x86/x86_64/mm.txt for a description of the memory map.
+ * See Documentation/x86/x86_64/mm.rst for a description of the memory map.
  *
  * Be very careful vs. KASLR when changing anything here. The KASLR address
  * range must not overlap with anything except the KASAN shadow area, which
@@ -143,7 +146,11 @@ extern unsigned int ptrs_per_p4d;
 
 #define MODULES_VADDR		(__START_KERNEL_map + KERNEL_IMAGE_SIZE)
 /* The module sections ends with the start of the fixmap */
-#define MODULES_END		_AC(0xffffffffff000000, UL)
+#ifndef CONFIG_DEBUG_KMAP_LOCAL_FORCE_MAP
+# define MODULES_END		_AC(0xffffffffff000000, UL)
+#else
+# define MODULES_END		_AC(0xfffffffffe000000, UL)
+#endif
 #define MODULES_LEN		(MODULES_END - MODULES_VADDR)
 
 #define ESPFIX_PGD_ENTRY	_AC(-2, UL)

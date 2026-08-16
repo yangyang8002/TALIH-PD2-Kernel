@@ -1,39 +1,23 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2014 MediaTek Inc.
  * Author: James Liao <jamesjj.liao@mediatek.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #ifndef __DRV_CLK_MTK_H
 #define __DRV_CLK_MTK_H
 
+#include <linux/regmap.h>
 #include <linux/bitops.h>
 #include <linux/clk-provider.h>
-#include <linux/regmap.h>
 #include <linux/platform_device.h>
 
 struct clk;
-
-struct clk *mtk_clk_register_fixed_factor_pdn(struct device *dev,
-	const char *name,
-	const char *parent_name, unsigned long flags,
-	unsigned int mult, unsigned int div, unsigned int shift,
-	unsigned int pd_reg, void __iomem *base);
-
+struct clk_onecell_data;
 
 #define MAX_MUX_GATE_BIT	31
 #define INVALID_MUX_GATE_BIT	(MAX_MUX_GATE_BIT + 1)
-#define INVALID_OFS		-1
-#define INVALID_SHFT		-1
-#define INVALID_WIDTH		-1
+
 #define MHZ (1000 * 1000)
 
 struct mtk_fixed_clk {
@@ -61,16 +45,6 @@ struct mtk_fixed_factor {
 	int div;
 };
 
-struct mtk_fixed_factor_pdn {
-	int id;
-	const char *name;
-	const char *parent_name;
-	int mult;
-	int div;
-	int shift;
-	int pd_reg;
-};
-
 #define FACTOR(_id, _name, _parent, _mult, _div) {	\
 		.id = _id,				\
 		.name = _name,				\
@@ -79,28 +53,15 @@ struct mtk_fixed_factor_pdn {
 		.div = _div,				\
 	}
 
-#define FACTOR_PDN(_id, _name, _parent, _mult, _div, _shift, _pd_reg) {	\
-		.id = _id,				\
-		.name = _name,				\
-		.parent_name = _parent,			\
-		.mult = _mult,				\
-		.div = _div,				\
-		.shift = _shift,				\
-		.pd_reg = _pd_reg,				\
-	}
-
 void mtk_clk_register_factors(const struct mtk_fixed_factor *clks,
 		int num, struct clk_onecell_data *clk_data);
-
-void mtk_clk_register_factors_pdn(const struct mtk_fixed_factor_pdn *clks,
-		int num, struct clk_onecell_data *clk_data, void __iomem *base);
 
 struct mtk_composite {
 	int id;
 	const char *name;
 	const char * const *parent_names;
 	const char *parent;
-	unsigned long flags;
+	unsigned flags;
 
 	uint32_t mux_reg;
 	uint32_t divider_reg;
@@ -203,12 +164,16 @@ struct mtk_gate {
 	int shift;
 	const struct clk_ops *ops;
 	unsigned long flags;
-	struct pwr_status *pwr_stat;
 };
 
 int mtk_clk_register_gates(struct device_node *node,
 			const struct mtk_gate *clks, int num,
 			struct clk_onecell_data *clk_data);
+
+int mtk_clk_register_gates_with_dev(struct device_node *node,
+		const struct mtk_gate *clks,
+		int num, struct clk_onecell_data *clk_data,
+		struct device *dev);
 
 struct mtk_clk_divider {
 	int id;
@@ -217,7 +182,6 @@ struct mtk_clk_divider {
 	unsigned long flags;
 
 	u32 div_reg;
-	u32 div_reg_fixup;
 	unsigned char div_shift;
 	unsigned char div_width;
 	unsigned char clk_divider_flags;
@@ -237,21 +201,10 @@ void mtk_clk_register_dividers(const struct mtk_clk_divider *mcds,
 			int num, void __iomem *base, spinlock_t *lock,
 				struct clk_onecell_data *clk_data);
 
-void mtk_clk_register_fixup_dividers(const struct mtk_clk_divider *mcds,
-			int num, void __iomem *base, spinlock_t *lock,
-				struct clk_onecell_data *clk_data);
-
 struct clk_onecell_data *mtk_alloc_clk_data(unsigned int clk_num);
-
-struct clk_onecell_data *mtk_devm_alloc_clk_data(struct device *dev,
-			unsigned int clk_num);
-
-void mtk_devm_free_clk_data(struct device *dev, struct clk_onecell_data *clk_data);
 
 #define HAVE_RST_BAR	BIT(0)
 #define PLL_AO		BIT(1)
-#define HAVE_RST_BAR_4_TIMES	(BIT(2) | BIT(0))
-#define EN_BIT_CTRL		(BIT(3))
 
 struct mtk_pll_div_table {
 	u32 div;
@@ -261,32 +214,28 @@ struct mtk_pll_div_table {
 struct mtk_pll_data {
 	int id;
 	const char *name;
-	uint32_t reg;
-	uint32_t pwr_reg;
-	uint32_t en_reg;
-	uint32_t en_mask;
-	uint32_t iso_mask;
-	uint32_t pwron_mask;
-	uint32_t pd_reg;
-	uint32_t tuner_reg;
-	uint32_t tuner_en_reg;
-	uint8_t tuner_en_bit;
+	u32 reg;
+	u32 pwr_reg;
+	u32 en_mask;
+	u32 pd_reg;
+	u32 tuner_reg;
+	u32 tuner_en_reg;
+	u8 tuner_en_bit;
 	int pd_shift;
 	unsigned int flags;
 	const struct clk_ops *ops;
-	uint32_t rst_bar_reg;
 	u32 rst_bar_mask;
 	unsigned long fmin;
 	unsigned long fmax;
 	int pcwbits;
 	int pcwibits;
-	uint32_t pcw_reg;
+	u32 pcw_reg;
 	int pcw_shift;
-	uint32_t pcw_chg_reg;
+	u32 pcw_chg_reg;
 	const struct mtk_pll_div_table *div_table;
 	const char *parent_name;
-	struct pwr_status *pwr_stat;
-	uint8_t pll_en_bit;
+	u32 en_reg;
+	u8 pll_en_bit; /* Assume 0, indicates BIT(0) by default */
 };
 
 void mtk_clk_register_plls(struct device_node *node,
@@ -296,24 +245,17 @@ void mtk_clk_register_plls(struct device_node *node,
 struct clk *mtk_clk_register_ref2usb_tx(const char *name,
 			const char *parent_name, void __iomem *reg);
 
-#ifdef CONFIG_RESET_CONTROLLER
 void mtk_register_reset_controller(struct device_node *np,
 			unsigned int num_regs, int regofs);
-#else
-static inline void mtk_register_reset_controller(struct device_node *np,
-			unsigned int num_regs, int regofs)
-{
-}
-#endif
+
+void mtk_register_reset_controller_set_clr(struct device_node *np,
+	unsigned int num_regs, int regofs);
 
 struct mtk_clk_desc {
 	const struct mtk_gate *clks;
 	size_t num_clks;
 };
 
-extern bool (*mtk_fh_set_rate)(int pll_id, unsigned long dds, int postdiv);
-
 int mtk_clk_simple_probe(struct platform_device *pdev);
-int mtk_is_pll_enable(void);
-int mtk_is_cg_enable(void);
+
 #endif /* __DRV_CLK_MTK_H */

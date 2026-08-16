@@ -1,17 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2012 ARM Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/linkage.h>
@@ -28,14 +17,7 @@
  *	x0 - dest
  *	x1 - src
  */
-ENTRY(copy_page)
-alternative_if ARM64_HAS_NO_HW_PREFETCH
-	// Prefetch three cache lines ahead.
-	prfm	pldl1strm, [x1, #128]
-	prfm	pldl1strm, [x1, #256]
-	prfm	pldl1strm, [x1, #384]
-alternative_else_nop_endif
-
+SYM_FUNC_START_PI(copy_page)
 	ldp	x2, x3, [x1]
 	ldp	x4, x5, [x1, #16]
 	ldp	x6, x7, [x1, #32]
@@ -49,10 +31,6 @@ alternative_else_nop_endif
 	add	x1, x1, #128
 1:
 	tst	x0, #(PAGE_SIZE - 1)
-
-alternative_if ARM64_HAS_NO_HW_PREFETCH
-	prfm	pldl1strm, [x1, #384]
-alternative_else_nop_endif
 
 	stnp	x2, x3, [x0, #-256]
 	ldp	x2, x3, [x1]
@@ -86,4 +64,5 @@ alternative_else_nop_endif
 	stnp	x16, x17, [x0, #112 - 256]
 
 	ret
-ENDPROC(copy_page)
+SYM_FUNC_END_PI(copy_page)
+EXPORT_SYMBOL(copy_page)

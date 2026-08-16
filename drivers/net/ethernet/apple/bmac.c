@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Network device driver for the BMAC ethernet controller on
  * Apple Powermacs.  Assumes it's under a DBDMA controller.
@@ -23,11 +24,11 @@
 #include <linux/bitrev.h>
 #include <linux/ethtool.h>
 #include <linux/slab.h>
+#include <linux/pgtable.h>
 #include <asm/prom.h>
 #include <asm/dbdma.h>
 #include <asm/io.h>
 #include <asm/page.h>
-#include <asm/pgtable.h>
 #include <asm/machdep.h>
 #include <asm/pmac_feature.h>
 #include <asm/macio.h>
@@ -307,7 +308,7 @@ bmac_init_registers(struct net_device *dev)
 {
 	struct bmac_data *bp = netdev_priv(dev);
 	volatile unsigned short regValue;
-	unsigned short *pWord16;
+	const unsigned short *pWord16;
 	int i;
 
 	/* XXDEBUG(("bmac: enter init_registers\n")); */
@@ -370,7 +371,7 @@ bmac_init_registers(struct net_device *dev)
 	bmwrite(dev, BHASH1, bp->hash_table_mask[2]); 	/* bits 47 - 32 */
 	bmwrite(dev, BHASH0, bp->hash_table_mask[3]); 	/* bits 63 - 48 */
 
-	pWord16 = (unsigned short *)dev->dev_addr;
+	pWord16 = (const unsigned short *)dev->dev_addr;
 	bmwrite(dev, MADD0, *pWord16++);
 	bmwrite(dev, MADD1, *pWord16++);
 	bmwrite(dev, MADD2, *pWord16);
@@ -476,26 +477,26 @@ static int bmac_suspend(struct macio_dev *mdev, pm_message_t state)
 		config = bmread(dev, RXCFG);
 		bmwrite(dev, RXCFG, (config & ~RxMACEnable));
 		config = bmread(dev, TXCFG);
-       		bmwrite(dev, TXCFG, (config & ~TxMACEnable));
+		bmwrite(dev, TXCFG, (config & ~TxMACEnable));
 		bmwrite(dev, INTDISABLE, DisableAll); /* disable all intrs */
-       		/* disable rx and tx dma */
+		/* disable rx and tx dma */
 		rd->control = cpu_to_le32(DBDMA_CLEAR(RUN|PAUSE|FLUSH|WAKE));	/* clear run bit */
 		td->control = cpu_to_le32(DBDMA_CLEAR(RUN|PAUSE|FLUSH|WAKE));	/* clear run bit */
-       		/* free some skb's */
-       		for (i=0; i<N_RX_RING; i++) {
-       			if (bp->rx_bufs[i] != NULL) {
-       				dev_kfree_skb(bp->rx_bufs[i]);
-       				bp->rx_bufs[i] = NULL;
-       			}
-       		}
-       		for (i = 0; i<N_TX_RING; i++) {
+		/* free some skb's */
+		for (i=0; i<N_RX_RING; i++) {
+			if (bp->rx_bufs[i] != NULL) {
+				dev_kfree_skb(bp->rx_bufs[i]);
+				bp->rx_bufs[i] = NULL;
+			}
+		}
+		for (i = 0; i<N_TX_RING; i++) {
 			if (bp->tx_bufs[i] != NULL) {
 		       		dev_kfree_skb(bp->tx_bufs[i]);
 	       			bp->tx_bufs[i] = NULL;
 		       	}
 		}
 	}
-       	pmac_call_feature(PMAC_FTR_BMAC_ENABLE, macio_get_of_node(bp->mdev), 0, 0);
+	pmac_call_feature(PMAC_FTR_BMAC_ENABLE, macio_get_of_node(bp->mdev), 0, 0);
 	return 0;
 }
 
@@ -509,9 +510,9 @@ static int bmac_resume(struct macio_dev *mdev)
 		bmac_reset_and_enable(dev);
 
 	enable_irq(dev->irq);
-       	enable_irq(bp->tx_dma_intr);
-       	enable_irq(bp->rx_dma_intr);
-       	netif_device_attach(dev);
+	enable_irq(bp->tx_dma_intr);
+	enable_irq(bp->rx_dma_intr);
+	netif_device_attach(dev);
 
 	return 0;
 }
@@ -521,7 +522,7 @@ static int bmac_set_address(struct net_device *dev, void *addr)
 {
 	struct bmac_data *bp = netdev_priv(dev);
 	unsigned char *p = addr;
-	unsigned short *pWord16;
+	const unsigned short *pWord16;
 	unsigned long flags;
 	int i;
 
@@ -532,7 +533,7 @@ static int bmac_set_address(struct net_device *dev, void *addr)
 		dev->dev_addr[i] = p[i];
 	}
 	/* load up the hardware address */
-	pWord16  = (unsigned short *)dev->dev_addr;
+	pWord16  = (const unsigned short *)dev->dev_addr;
 	bmwrite(dev, MADD0, *pWord16++);
 	bmwrite(dev, MADD1, *pWord16++);
 	bmwrite(dev, MADD2, *pWord16);
@@ -777,7 +778,7 @@ static irqreturn_t bmac_txdma_intr(int irq, void *dev_id)
 
 		if (bp->tx_bufs[bp->tx_empty]) {
 			++dev->stats.tx_packets;
-			dev_kfree_skb_irq(bp->tx_bufs[bp->tx_empty]);
+			dev_consume_skb_irq(bp->tx_bufs[bp->tx_empty]);
 		}
 		bp->tx_bufs[bp->tx_empty] = NULL;
 		bp->tx_fullup = 0;
@@ -814,8 +815,8 @@ static int reverse6[64] = {
 static unsigned int
 crc416(unsigned int curval, unsigned short nxtval)
 {
-	register unsigned int counter, cur = curval, next = nxtval;
-	register int high_crc_set, low_data_set;
+	unsigned int counter, cur = curval, next = nxtval;
+	int high_crc_set, low_data_set;
 
 	/* Swap bytes */
 	next = ((next & 0x00FF) << 8) | (next >> 8);
@@ -1510,7 +1511,7 @@ static void bmac_tx_timeout(struct timer_list *t)
 	i = bp->tx_empty;
 	++dev->stats.tx_errors;
 	if (i != bp->tx_fill) {
-		dev_kfree_skb(bp->tx_bufs[i]);
+		dev_kfree_skb_irq(bp->tx_bufs[i]);
 		bp->tx_bufs[i] = NULL;
 		if (++i >= N_TX_RING) i = 0;
 		bp->tx_empty = i;
@@ -1598,7 +1599,7 @@ static int bmac_remove(struct macio_dev *mdev)
 
 	unregister_netdev(dev);
 
-       	free_irq(dev->irq, dev);
+	free_irq(dev->irq, dev);
 	free_irq(bp->tx_dma_intr, dev);
 	free_irq(bp->rx_dma_intr, dev);
 

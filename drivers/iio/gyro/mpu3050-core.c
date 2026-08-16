@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * MPU3050 gyroscope driver
  *
@@ -12,6 +13,7 @@
  * TODO: add support for setting up the low pass 3dB frequency.
  */
 
+#include <linux/bitfield.h>
 #include <linux/bitops.h>
 #include <linux/delay.h>
 #include <linux/err.h>
@@ -319,7 +321,9 @@ static int mpu3050_read_raw(struct iio_dev *indio_dev,
 		}
 	case IIO_CHAN_INFO_RAW:
 		/* Resume device */
-		pm_runtime_get_sync(mpu3050->dev);
+		ret = pm_runtime_resume_and_get(mpu3050->dev);
+		if (ret)
+			return ret;
 		mutex_lock(&mpu3050->lock);
 
 		ret = mpu3050_set_8khz_samplerate(mpu3050);
@@ -551,7 +555,7 @@ static irqreturn_t mpu3050_trigger_handler(int irq, void *p)
 				toread = bytes_per_datum;
 				offset = 1;
 				/* Put in some dummy value */
-				fifo_values[0] = 0xAAAA;
+				fifo_values[0] = cpu_to_be16(0xAAAA);
 			}
 
 			ret = regmap_bulk_read(mpu3050->map,
@@ -650,14 +654,20 @@ out_trigger_unlock:
 static int mpu3050_buffer_preenable(struct iio_dev *indio_dev)
 {
 	struct mpu3050 *mpu3050 = iio_priv(indio_dev);
+	int ret;
 
-	pm_runtime_get_sync(mpu3050->dev);
+	ret = pm_runtime_resume_and_get(mpu3050->dev);
+	if (ret)
+		return ret;
 
 	/* Unless we have OUR trigger active, run at full speed */
-	if (!mpu3050->hw_irq_trigger)
-		return mpu3050_set_8khz_samplerate(mpu3050);
+	if (!mpu3050->hw_irq_trigger) {
+		ret = mpu3050_set_8khz_samplerate(mpu3050);
+		if (ret)
+			pm_runtime_put_autosuspend(mpu3050->dev);
+	}
 
-	return 0;
+	return ret;
 }
 
 static int mpu3050_buffer_postdisable(struct iio_dev *indio_dev)
@@ -672,8 +682,6 @@ static int mpu3050_buffer_postdisable(struct iio_dev *indio_dev)
 
 static const struct iio_buffer_setup_ops mpu3050_buffer_setup_ops = {
 	.preenable = mpu3050_buffer_preenable,
-	.postenable = iio_triggered_buffer_postenable,
-	.predisable = iio_triggered_buffer_predisable,
 	.postdisable = mpu3050_buffer_postdisable,
 };
 
@@ -796,7 +804,8 @@ static int mpu3050_read_mem(struct mpu3050 *mpu3050,
 static int mpu3050_hw_init(struct mpu3050 *mpu3050)
 {
 	int ret;
-	u8 otp[8];
+	__le64 otp_le;
+	u64 otp;
 
 	/* Reset */
 	ret = regmap_update_bits(mpu3050->map,
@@ -827,29 +836,31 @@ static int mpu3050_hw_init(struct mpu3050 *mpu3050)
 				MPU3050_MEM_USER_BANK |
 				MPU3050_MEM_OTP_BANK_0),
 			       0,
-			       sizeof(otp),
-			       otp);
+			       sizeof(otp_le),
+			       (u8 *)&otp_le);
 	if (ret)
 		return ret;
 
 	/* This is device-unique data so it goes into the entropy pool */
-	add_device_randomness(otp, sizeof(otp));
+	add_device_randomness(&otp_le, sizeof(otp_le));
+
+	otp = le64_to_cpu(otp_le);
 
 	dev_info(mpu3050->dev,
-		 "die ID: %04X, wafer ID: %02X, A lot ID: %04X, "
-		 "W lot ID: %03X, WP ID: %01X, rev ID: %02X\n",
+		 "die ID: %04llX, wafer ID: %02llX, A lot ID: %04llX, "
+		 "W lot ID: %03llX, WP ID: %01llX, rev ID: %02llX\n",
 		 /* Die ID, bits 0-12 */
-		 (otp[1] << 8 | otp[0]) & 0x1fff,
+		 FIELD_GET(GENMASK_ULL(12, 0), otp),
 		 /* Wafer ID, bits 13-17 */
-		 ((otp[2] << 8 | otp[1]) & 0x03e0) >> 5,
+		 FIELD_GET(GENMASK_ULL(17, 13), otp),
 		 /* A lot ID, bits 18-33 */
-		 ((otp[4] << 16 | otp[3] << 8 | otp[2]) & 0x3fffc) >> 2,
+		 FIELD_GET(GENMASK_ULL(33, 18), otp),
 		 /* W lot ID, bits 34-45 */
-		 ((otp[5] << 8 | otp[4]) & 0x3ffc) >> 2,
+		 FIELD_GET(GENMASK_ULL(45, 34), otp),
 		 /* WP ID, bits 47-49 */
-		 ((otp[6] << 8 | otp[5]) & 0x0380) >> 7,
+		 FIELD_GET(GENMASK_ULL(49, 47), otp),
 		 /* rev ID, bits 50-55 */
-		 otp[6] >> 2);
+		 FIELD_GET(GENMASK_ULL(55, 50), otp));
 
 	return 0;
 }
@@ -873,10 +884,11 @@ static int mpu3050_power_up(struct mpu3050 *mpu3050)
 	ret = regmap_update_bits(mpu3050->map, MPU3050_PWR_MGM,
 				 MPU3050_PWR_MGM_SLEEP, 0);
 	if (ret) {
+		regulator_bulk_disable(ARRAY_SIZE(mpu3050->regs), mpu3050->regs);
 		dev_err(mpu3050->dev, "error setting power mode\n");
 		return ret;
 	}
-	msleep(10);
+	usleep_range(10000, 20000);
 
 	return 0;
 }
@@ -1055,7 +1067,7 @@ static int mpu3050_trigger_probe(struct iio_dev *indio_dev, int irq)
 	mpu3050->trig = devm_iio_trigger_alloc(&indio_dev->dev,
 					       "%s-dev%d",
 					       indio_dev->name,
-					       indio_dev->id);
+					       iio_device_id(indio_dev));
 	if (!mpu3050->trig)
 		return -ENOMEM;
 
@@ -1129,11 +1141,16 @@ static int mpu3050_trigger_probe(struct iio_dev *indio_dev, int irq)
 
 	ret = iio_trigger_register(mpu3050->trig);
 	if (ret)
-		return ret;
+		goto err_iio_trigger;
 
 	indio_dev->trig = iio_trigger_get(mpu3050->trig);
 
 	return 0;
+
+err_iio_trigger:
+	free_irq(mpu3050->irq, mpu3050->trig);
+
+	return ret;
 }
 
 int mpu3050_common_probe(struct device *dev,
@@ -1161,8 +1178,7 @@ int mpu3050_common_probe(struct device *dev,
 	mpu3050->divisor = 99;
 
 	/* Read the mounting matrix, if present */
-	ret = of_iio_read_mount_matrix(dev, "mount-matrix",
-				       &mpu3050->orientation);
+	ret = iio_read_mount_matrix(dev, &mpu3050->orientation);
 	if (ret)
 		return ret;
 
@@ -1171,10 +1187,8 @@ int mpu3050_common_probe(struct device *dev,
 	mpu3050->regs[1].supply = mpu3050_reg_vlogic;
 	ret = devm_regulator_bulk_get(dev, ARRAY_SIZE(mpu3050->regs),
 				      mpu3050->regs);
-	if (ret) {
-		dev_err(dev, "Cannot get regulators\n");
-		return ret;
-	}
+	if (ret)
+		return dev_err_probe(dev, ret, "Cannot get regulators\n");
 
 	ret = mpu3050_power_up(mpu3050);
 	if (ret)
@@ -1209,7 +1223,6 @@ int mpu3050_common_probe(struct device *dev,
 	if (ret)
 		goto err_power_down;
 
-	indio_dev->dev.parent = dev;
 	indio_dev->channels = mpu3050_channels;
 	indio_dev->num_channels = ARRAY_SIZE(mpu3050_channels);
 	indio_dev->info = &mpu3050_info;
@@ -1223,12 +1236,6 @@ int mpu3050_common_probe(struct device *dev,
 	if (ret) {
 		dev_err(dev, "triggered buffer setup failed\n");
 		goto err_power_down;
-	}
-
-	ret = iio_device_register(indio_dev);
-	if (ret) {
-		dev_err(dev, "device register failed\n");
-		goto err_cleanup_buffer;
 	}
 
 	dev_set_drvdata(dev, indio_dev);
@@ -1253,9 +1260,20 @@ int mpu3050_common_probe(struct device *dev,
 	pm_runtime_use_autosuspend(dev);
 	pm_runtime_put(dev);
 
+	ret = iio_device_register(indio_dev);
+	if (ret) {
+		dev_err(dev, "device register failed\n");
+		goto err_iio_device_register;
+	}
+
 	return 0;
 
-err_cleanup_buffer:
+err_iio_device_register:
+	pm_runtime_get_sync(dev);
+	pm_runtime_put_noidle(dev);
+	pm_runtime_disable(dev);
+	if (irq)
+		free_irq(mpu3050->irq, mpu3050->trig);
 	iio_triggered_buffer_cleanup(indio_dev);
 err_power_down:
 	mpu3050_power_down(mpu3050);
@@ -1269,13 +1287,13 @@ int mpu3050_common_remove(struct device *dev)
 	struct iio_dev *indio_dev = dev_get_drvdata(dev);
 	struct mpu3050 *mpu3050 = iio_priv(indio_dev);
 
+	iio_device_unregister(indio_dev);
 	pm_runtime_get_sync(dev);
 	pm_runtime_put_noidle(dev);
 	pm_runtime_disable(dev);
-	iio_triggered_buffer_cleanup(indio_dev);
 	if (mpu3050->irq)
-		free_irq(mpu3050->irq, mpu3050);
-	iio_device_unregister(indio_dev);
+		free_irq(mpu3050->irq, mpu3050->trig);
+	iio_triggered_buffer_cleanup(indio_dev);
 	mpu3050_power_down(mpu3050);
 
 	return 0;

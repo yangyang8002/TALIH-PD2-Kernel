@@ -13,11 +13,10 @@
 #include "ext4_extents.h"
 
 /**
- * get_ext_path - Find an extent path for designated logical block number.
- *
- * @inode:	an inode which is searched
+ * get_ext_path() - Find an extent path for designated logical block number.
+ * @inode:	inode to be searched
  * @lblock:	logical block number to find an extent path
- * @path:	pointer to an extent path pointer (for output)
+ * @ppath:	pointer to an extent path pointer (for output)
  *
  * ext4_find_extent wrapper. Return 0 on success, or a negative error value
  * on failure.
@@ -37,13 +36,13 @@ get_ext_path(struct inode *inode, ext4_lblk_t lblock,
 		*ppath = NULL;
 		return -ENODATA;
 	}
-	*ppath = path;
 	return 0;
 }
 
 /**
- * ext4_double_down_write_data_sem - Acquire two inodes' write lock
- *                                   of i_data_sem
+ * ext4_double_down_write_data_sem() - write lock two inodes's i_data_sem
+ * @first: inode to be locked
+ * @second: inode to be locked
  *
  * Acquire write lock of i_data_sem of the two inodes
  */
@@ -215,7 +214,7 @@ mext_page_mkuptodate(struct page *page, unsigned from, unsigned to)
 	for (i = 0; i < nr; i++) {
 		bh = arr[i];
 		if (!bh_uptodate_or_lock(bh)) {
-			err = bh_submit_read(bh);
+			err = ext4_read_bh(bh, 0, NULL);
 			if (err)
 				return err;
 		}
@@ -422,8 +421,8 @@ repair_branches:
 					   block_len_in_page, 0, &err2);
 	ext4_double_up_write_data_sem(orig_inode, donor_inode);
 	if (replaced_count != block_len_in_page) {
-		EXT4_ERROR_INODE_BLOCK(orig_inode, (sector_t)(orig_blk_offset),
-				       "Unable to copy data block,"
+		ext4_error_inode_block(orig_inode, (sector_t)(orig_blk_offset),
+				       EIO, "Unable to copy data block,"
 				       " data will be lost.");
 		*err = -EIO;
 	}
@@ -467,19 +466,17 @@ mext_check_arguments(struct inode *orig_inode,
 	if (IS_IMMUTABLE(donor_inode) || IS_APPEND(donor_inode))
 		return -EPERM;
 
-	/* Ext4 move extent does not support swapfile */
+	/* Ext4 move extent does not support swap files */
 	if (IS_SWAPFILE(orig_inode) || IS_SWAPFILE(donor_inode)) {
-		ext4_debug("ext4 move extent: The argument files should "
-			"not be swapfile [ino:orig %lu, donor %lu]\n",
+		ext4_debug("ext4 move extent: The argument files should not be swap files [ino:orig %lu, donor %lu]\n",
 			orig_inode->i_ino, donor_inode->i_ino);
-		return -EBUSY;
+		return -ETXTBSY;
 	}
 
-	if (ext4_is_quota_file(orig_inode) && ext4_is_quota_file(donor_inode)) {
-		ext4_debug("ext4 move extent: The argument files should "
-			"not be quota files [ino:orig %lu, donor %lu]\n",
+	if (ext4_is_quota_file(orig_inode) || ext4_is_quota_file(donor_inode)) {
+		ext4_debug("ext4 move extent: The argument files should not be quota files [ino:orig %lu, donor %lu]\n",
 			orig_inode->i_ino, donor_inode->i_ino);
-		return -EBUSY;
+		return -EOPNOTSUPP;
 	}
 
 	/* Ext4 move extent supports only extent based file */
@@ -593,11 +590,9 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 		return -EOPNOTSUPP;
 	}
 
-	if ((IS_ENCRYPTED(orig_inode) || IS_ENCRYPTED(donor_inode))
-	 && (!fscrypt_inode_uses_inline_crypto(orig_inode) ||
-	     !fscrypt_inode_uses_inline_crypto(donor_inode))) {
+	if (IS_ENCRYPTED(orig_inode) || IS_ENCRYPTED(donor_inode)) {
 		ext4_msg(orig_inode->i_sb, KERN_ERR,
-			"Online defrag not supported for SW encrypted files");
+			 "Online defrag not supported for encrypted files");
 		return -EOPNOTSUPP;
 	}
 
@@ -617,6 +612,7 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 		goto out;
 	o_end = o_start + len;
 
+	*moved_len = 0;
 	while (o_start < o_end) {
 		struct ext4_extent *ex;
 		ext4_lblk_t cur_blk, next_blk;
@@ -628,11 +624,11 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 		if (ret)
 			goto out;
 		ex = path[path->p_depth].p_ext;
-		next_blk = ext4_ext_next_allocated_block(path);
 		cur_blk = le32_to_cpu(ex->ee_block);
 		cur_len = ext4_ext_get_actual_len(ex);
 		/* Check hole before the start pos */
 		if (cur_blk + cur_len - 1 < o_start) {
+			next_blk = ext4_ext_next_allocated_block(path);
 			if (next_blk == EXT_MAX_BLOCKS) {
 				o_start = o_end;
 				ret = -ENODATA;
@@ -661,7 +657,7 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 		donor_page_index = d_start >> (PAGE_SHIFT -
 					       donor_inode->i_blkbits);
 		offset_in_page = o_start % blocks_per_page;
-		if (cur_len > blocks_per_page- offset_in_page)
+		if (cur_len > blocks_per_page - offset_in_page)
 			cur_len = blocks_per_page - offset_in_page;
 		/*
 		 * Up semaphore to avoid following problems:
@@ -672,7 +668,7 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 		 */
 		ext4_double_up_write_data_sem(orig_inode, donor_inode);
 		/* Swap original branches with new branches */
-		move_extent_per_page(o_filp, donor_inode,
+		*moved_len += move_extent_per_page(o_filp, donor_inode,
 				     orig_page_index, donor_page_index,
 				     offset_in_page, cur_len,
 				     unwritten, &ret);
@@ -682,14 +678,11 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 		o_start += cur_len;
 		d_start += cur_len;
 	}
-	*moved_len = o_start - orig_blk;
-	if (*moved_len > len)
-		*moved_len = len;
 
 out:
 	if (*moved_len) {
-		ext4_discard_preallocations(orig_inode);
-		ext4_discard_preallocations(donor_inode);
+		ext4_discard_preallocations(orig_inode, 0);
+		ext4_discard_preallocations(donor_inode, 0);
 	}
 
 	ext4_ext_drop_refs(path);

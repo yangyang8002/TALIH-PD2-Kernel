@@ -144,7 +144,7 @@ static void prism2sta_disconnect_usb(struct usb_interface *interface)
 {
 	struct wlandevice *wlandev;
 
-	wlandev = (struct wlandevice *)usb_get_intfdata(interface);
+	wlandev = usb_get_intfdata(interface);
 	if (wlandev) {
 		LIST_HEAD(cleanlist);
 		struct hfa384x_usbctlx *ctlx, *temp;
@@ -171,9 +171,9 @@ static void prism2sta_disconnect_usb(struct usb_interface *interface)
 		 */
 		prism2sta_ifstate(wlandev, P80211ENUM_ifstate_disable);
 
-		del_singleshot_timer_sync(&hw->throttle);
-		del_singleshot_timer_sync(&hw->reqtimer);
-		del_singleshot_timer_sync(&hw->resptimer);
+		del_timer_sync(&hw->throttle);
+		del_timer_sync(&hw->reqtimer);
+		del_timer_sync(&hw->resptimer);
 
 		/* Unlink all the URBs. This "removes the wheels"
 		 * from the entire CTLX handling mechanism.
@@ -230,7 +230,7 @@ static int prism2sta_suspend(struct usb_interface *interface,
 	struct hfa384x *hw = NULL;
 	struct wlandevice *wlandev;
 
-	wlandev = (struct wlandevice *)usb_get_intfdata(interface);
+	wlandev = usb_get_intfdata(interface);
 	if (!wlandev)
 		return -ENODEV;
 
@@ -253,7 +253,7 @@ static int prism2sta_resume(struct usb_interface *interface)
 	struct hfa384x *hw = NULL;
 	struct wlandevice *wlandev;
 
-	wlandev = (struct wlandevice *)usb_get_intfdata(interface);
+	wlandev = usb_get_intfdata(interface);
 	if (!wlandev)
 		return -ENODEV;
 

@@ -1,73 +1,150 @@
-# TALIH-PD2_Kernel
+# How do I submit patches to Android Common Kernels
 
-基本名词详解：
+1. BEST: Make all of your changes to upstream Linux. If appropriate, backport to the stable releases.
+   These patches will be merged automatically in the corresponding common kernels. If the patch is already
+   in upstream Linux, post a backport of the patch that conforms to the patch requirements below.
+   - Do not send patches upstream that contain only symbol exports. To be considered for upstream Linux,
+additions of `EXPORT_SYMBOL_GPL()` require an in-tree modular driver that uses the symbol -- so include
+the new driver or changes to an existing driver in the same patchset as the export.
+   - When sending patches upstream, the commit message must contain a clear case for why the patch
+is needed and beneficial to the community. Enabling out-of-tree drivers or functionality is not
+not a persuasive case.
 
-1.TAL：好未来（包括旗下的学而思）
+2. LESS GOOD: Develop your patches out-of-tree (from an upstream Linux point-of-view). Unless these are
+   fixing an Android-specific bug, these are very unlikely to be accepted unless they have been
+   coordinated with kernel-team@android.com. If you want to proceed, post a patch that conforms to the
+   patch requirements below.
 
-2.TALPAD：学而思学习机（学而思平板;好未来平板）
+# Common Kernel patch requirements
 
-3.TALPAD-BOOM：由Public class 早茶光于2024年3月18日组建的TALPAD讨论群，并非TAL附属组织，其核心理念是“自由、开放与安全”，于2025年5月1日转移主权，其管理层仍处于核心地位，目前Public class 早茶光已不再参与主要破解/管理/开发工作，但其带来的影响力不可忽视
+- All patches must conform to the Linux kernel coding standards and pass `scripts/checkpatch.pl`
+- Patches shall not break gki_defconfig or allmodconfig builds for arm, arm64, x86, x86_64 architectures
+(see  https://source.android.com/setup/build/building-kernels)
+- If the patch is not merged from an upstream branch, the subject must be tagged with the type of patch:
+`UPSTREAM:`, `BACKPORT:`, `FROMGIT:`, `FROMLIST:`, or `ANDROID:`.
+- All patches must have a `Change-Id:` tag (see https://gerrit-review.googlesource.com/Documentation/user-changeid.html)
+- If an Android bug has been assigned, there must be a `Bug:` tag.
+- All patches must have a `Signed-off-by:` tag by the author and the submitter
 
-4.内核Root：分为两大类，第一种是直接依靠外部修补的root管理器，如“FolkPatch”“APatch”，第二种是内核集成式root，如SukiSu，KernelSU
+Additional requirements are listed below based on patch type
 
-5.GKI：通用内核映像，是Google自Kernel 5.4以来开始施行的统一开发管理，为解决不同设备、不同厂商内核源码的碎片化
+## Requirements for backports from mainline Linux: `UPSTREAM:`, `BACKPORT:`
 
-6.TALPAD-Kernel-Team：负责管理此内核源码的直属组织，衍生于TALPAD-BOOM，但由于TALPAD-BOOM人均技术水平不足3.8分（满分十分）而迟迟无法找到更多开发者
+- If the patch is a cherry-pick from Linux mainline with no changes at all
+    - tag the patch subject with `UPSTREAM:`.
+    - add upstream commit information with a `(cherry picked from commit ...)` line
+    - Example:
+        - if the upstream commit message is
+```
+        important patch from upstream
 
----
+        This is the detailed description of the important patch
 
-如你所见，这里如你所见
+        Signed-off-by: Fred Jones <fred.jones@foo.org>
+```
+>- then Joe Smith would upload the patch for the common kernel as
+```
+        UPSTREAM: important patch from upstream
 
-这是一个由TALPAD-BOOM开发团队维护的TALPAD设备的Linux kernel，对，你没看错，就是那个Linux kernel，我们打算给TALPAD维护内核
+        This is the detailed description of the important patch
 
-~~但是TAL（就是那个TAL）似乎给这内核动了点手脚~~，大概内容为：
+        Signed-off-by: Fred Jones <fred.jones@foo.org>
 
-1. ~~有些.c指向的头文件地址稀烂，本应写<目标头文件>却写成了"目标头文件"~~（已解决）
+        Bug: 135791357
+        Change-Id: I4caaaa566ea080fa148c5e768bb1a0b6f7201c01
+        (cherry picked from commit c31e73121f4c1ec41143423ac6ce3ce6dafdcec1)
+        Signed-off-by: Joe Smith <joe.smith@foo.org>
+```
 
-2. ~~有些内容似乎是闭源的，随便TAL了，反正也是他们自己写的东西，该开源的还是开源了~~（错觉来的）
+- If the patch requires any changes from the upstream version, tag the patch with `BACKPORT:`
+instead of `UPSTREAM:`.
+    - use the same tags as `UPSTREAM:`
+    - add comments about the changes under the `(cherry picked from commit ...)` line
+    - Example:
+```
+        BACKPORT: important patch from upstream
 
-3. ~~连kconfig都有些错误，刚开始编译时简直是开幕雷击~~（已解决）
+        This is the detailed description of the important patch
 
-我们打算在n个月内给该内核适配sukisu/kernelsu
+        Signed-off-by: Fred Jones <fred.jones@foo.org>
 
----
+        Bug: 135791357
+        Change-Id: I4caaaa566ea080fa148c5e768bb1a0b6f7201c01
+        (cherry picked from commit c31e73121f4c1ec41143423ac6ce3ce6dafdcec1)
+        [joe: Resolved minor conflict in drivers/foo/bar.c ]
+        Signed-off-by: Joe Smith <joe.smith@foo.org>
+```
 
-SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
+## Requirements for other backports: `FROMGIT:`, `FROMLIST:`,
 
-Copyright (C) 1991-2026 Linus Torvalds and the Linux Kernel Community (original Linux kernel)
+- If the patch has been merged into an upstream maintainer tree, but has not yet
+been merged into Linux mainline
+    - tag the patch subject with `FROMGIT:`
+    - add info on where the patch came from as `(cherry picked from commit <sha1> <repo> <branch>)`. This
+must be a stable maintainer branch (not rebased, so don't use `linux-next` for example).
+    - if changes were required, use `BACKPORT: FROMGIT:`
+    - Example:
+        - if the commit message in the maintainer tree is
+```
+        important patch from upstream
 
-Copyright (C) 2026 TAL (TALPAD-BOOM) (modified distribution)
+        This is the detailed description of the important patch
 
-本仓库基于Linux内核源码修改发布，原始版权归Linux内核社区所有，修改部分版权归TALPAD-BOOM开发团队所有
+        Signed-off-by: Fred Jones <fred.jones@foo.org>
+```
+>- then Joe Smith would upload the patch for the common kernel as
+```
+        FROMGIT: important patch from upstream
 
-# 怎么编译内核？~~再也不是屎了~~
+        This is the detailed description of the important patch
 
-TALPAD的/proc/version记录的编译环境是llvm-r383902
+        Signed-off-by: Fred Jones <fred.jones@foo.org>
 
-因此我特地准备了编译用的clang和lld
+        Bug: 135791357
+        (cherry picked from commit 878a2fd9de10b03d11d2f622250285c7e63deace
+         https://git.kernel.org/pub/scm/linux/kernel/git/foo/bar.git test-branch)
+        Change-Id: I4caaaa566ea080fa148c5e768bb1a0b6f7201c01
+        Signed-off-by: Joe Smith <joe.smith@foo.org>
+```
 
-[Download llvm-tools](https://github.com/Kevin233B/TALIH-PD2-Kernel/releases/download/llvm-r383902b/llvm-tools.zip)
 
-我已经把需要的东西放在prebuilts里面了 amd64开箱即用
+- If the patch has been submitted to LKML, but not accepted into any maintainer tree
+    - tag the patch subject with `FROMLIST:`
+    - add a `Link:` tag with a link to the submittal on lore.kernel.org
+    - add a `Bug:` tag with the Android bug (required for patches not accepted into
+a maintainer tree)
+    - if changes were required, use `BACKPORT: FROMLIST:`
+    - Example:
+```
+        FROMLIST: important patch from upstream
 
-暂不支持arm64 
+        This is the detailed description of the important patch
 
-我准备了一些脚本，如下：
+        Signed-off-by: Fred Jones <fred.jones@foo.org>
 
-1.~~执行Integrate_sukisu.sh~~（等SUSFS支持之后吧）
+        Bug: 135791357
+        Link: https://lore.kernel.org/lkml/20190619171517.GA17557@someone.com/
+        Change-Id: I4caaaa566ea080fa148c5e768bb1a0b6f7201c01
+        Signed-off-by: Joe Smith <joe.smith@foo.org>
+```
 
-2.~~执行Integrate_SUSFS.sh~~（没兼容）
+## Requirements for Android-specific patches: `ANDROID:`
 
-3.执行download_clang.sh
+- If the patch is fixing a bug to Android-specific code
+    - tag the patch subject with `ANDROID:`
+    - add a `Fixes:` tag that cites the patch with the bug
+    - Example:
+```
+        ANDROID: fix android-specific bug in foobar.c
 
-4.最后执行build-mt8797.sh
+        This is the detailed description of the important fix
 
-注意：这些脚本目前还处于开发阶段，因此可能会造成一些意外的问题
+        Fixes: 1234abcd2468 ("foobar: add cool feature")
+        Change-Id: I4caaaa566ea080fa148c5e768bb1a0b6f7201c01
+        Signed-off-by: Joe Smith <joe.smith@foo.org>
+```
 
-如果你需要sukisu/ksu，请自行修改defconfig
+- If the patch is a new feature
+    - tag the patch subject with `ANDROID:`
+    - add a `Bug:` tag with the Android bug (required for android-specific features)
 
-# Other
-
-TALPAD-Kernel-Team将会使用ai+人工的方式扫描内核源码中的漏洞，致力使此内核更加安全，避免恶意程序损坏用户设备
-
-By TALPAD-BOOM Kevin233

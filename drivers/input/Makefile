@@ -6,10 +6,10 @@
 # Each configuration option enables a list of files.
 
 obj-$(CONFIG_INPUT)		+= input-core.o
-input-core-y := input.o input-compat.o input-mt.o ff-core.o
+input-core-y := input.o input-compat.o input-mt.o input-poller.o ff-core.o
+input-core-y += touchscreen.o
 
 obj-$(CONFIG_INPUT_FF_MEMLESS)	+= ff-memless.o
-obj-$(CONFIG_INPUT_POLLDEV)	+= input-polldev.o
 obj-$(CONFIG_INPUT_SPARSEKMAP)	+= sparse-keymap.o
 obj-$(CONFIG_INPUT_MATRIXKMAP)	+= matrix-keymap.o
 
@@ -29,6 +29,3 @@ obj-$(CONFIG_INPUT_MISC)	+= misc/
 obj-$(CONFIG_INPUT_APMPOWER)	+= apm-power.o
 
 obj-$(CONFIG_RMI4_CORE)		+= rmi4/
-#Begin modify by xiakang.chen for hallkey on 2023/8/1
-obj-$(CONFIG_HALL_KEY_SWITCH)		+= hall_key/
-#end modify by xiakang.chen for hallkey on 2023/8/1

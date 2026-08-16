@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * UEFI Common Platform Error Record (CPER) support
  *
@@ -9,21 +10,9 @@
  *
  * For more information about CPER, please refer to Appendix N of UEFI
  * Specification version 2.4.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
+#include <linux/bitmap.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/time.h>
@@ -36,8 +25,6 @@
 #include <linux/bcd.h>
 #include <acpi/ghes.h>
 #include <ras/ras_event.h>
-
-static char rcd_decode_str[CPER_REC_LEN];
 
 /*
  * CPER record ID need to be unique even after reboot, because record
@@ -113,11 +100,70 @@ void cper_print_bits(const char *pfx, unsigned int bits,
 		if (!len)
 			len = snprintf(buf, sizeof(buf), "%s%s", pfx, str);
 		else
-			len += snprintf(buf+len, sizeof(buf)-len, ", %s", str);
+			len += scnprintf(buf+len, sizeof(buf)-len, ", %s", str);
 	}
 	if (len)
 		printk("%s\n", buf);
 }
+
+/**
+ * cper_bits_to_str - return a string for set bits
+ * @buf: buffer to store the output string
+ * @buf_size: size of the output string buffer
+ * @bits: bit mask
+ * @strs: string array, indexed by bit position
+ * @strs_size: size of the string array: @strs
+ *
+ * Add to @buf the bitmask in hexadecimal. Then, for each set bit in @bits,
+ * add the corresponding string describing the bit in @strs to @buf.
+ *
+ * A typical example is::
+ *
+ *	const char * const bits[] = {
+ *		"bit 3 name",
+ *		"bit 4 name",
+ *		"bit 5 name",
+ *	};
+ *	char str[120];
+ *	unsigned int bitmask = BIT(3) | BIT(5);
+ *	#define MASK GENMASK(5,3)
+ *
+ *	cper_bits_to_str(str, sizeof(str), FIELD_GET(MASK, bitmask),
+ *			 bits, ARRAY_SIZE(bits));
+ *
+ * The above code fills the string ``str`` with ``bit 3 name|bit 5 name``.
+ *
+ * Return: number of bytes stored or an error code if lower than zero.
+ */
+int cper_bits_to_str(char *buf, int buf_size, unsigned long bits,
+		     const char * const strs[], unsigned int strs_size)
+{
+	int len = buf_size;
+	char *str = buf;
+	int i, size;
+
+	*buf = '\0';
+
+	for_each_set_bit(i, &bits, strs_size) {
+		if (!(bits & BIT_ULL(i)))
+			continue;
+
+		if (*buf && len > 0) {
+			*str = '|';
+			len--;
+			str++;
+		}
+
+		size = strscpy(str, strs[i], len);
+		if (size < 0)
+			return size;
+
+		len -= size;
+		str += size;
+	}
+	return buf_size - len;
+}
+EXPORT_SYMBOL_GPL(cper_bits_to_str);
 
 static const char * const proc_type_strs[] = {
 	"IA32/X64",
@@ -233,7 +279,7 @@ static int cper_mem_err_location(struct cper_mem_err_compact *mem, char *msg)
 		return 0;
 
 	n = 0;
-	len = CPER_REC_LEN - 1;
+	len = CPER_REC_LEN;
 	if (mem->validation_bits & CPER_MEM_VALID_NODE)
 		n += scnprintf(msg + n, len - n, "node: %d ", mem->node);
 	if (mem->validation_bits & CPER_MEM_VALID_CARD)
@@ -244,10 +290,20 @@ static int cper_mem_err_location(struct cper_mem_err_compact *mem, char *msg)
 		n += scnprintf(msg + n, len - n, "rank: %d ", mem->rank);
 	if (mem->validation_bits & CPER_MEM_VALID_BANK)
 		n += scnprintf(msg + n, len - n, "bank: %d ", mem->bank);
+	if (mem->validation_bits & CPER_MEM_VALID_BANK_GROUP)
+		n += scnprintf(msg + n, len - n, "bank_group: %d ",
+			       mem->bank >> CPER_MEM_BANK_GROUP_SHIFT);
+	if (mem->validation_bits & CPER_MEM_VALID_BANK_ADDRESS)
+		n += scnprintf(msg + n, len - n, "bank_address: %d ",
+			       mem->bank & CPER_MEM_BANK_ADDRESS_MASK);
 	if (mem->validation_bits & CPER_MEM_VALID_DEVICE)
 		n += scnprintf(msg + n, len - n, "device: %d ", mem->device);
-	if (mem->validation_bits & CPER_MEM_VALID_ROW)
-		n += scnprintf(msg + n, len - n, "row: %d ", mem->row);
+	if (mem->validation_bits & (CPER_MEM_VALID_ROW | CPER_MEM_VALID_ROW_EXT)) {
+		u32 row = mem->row;
+
+		row |= cper_get_mem_extension(mem->validation_bits, mem->extended);
+		n += scnprintf(msg + n, len - n, "row: %d ", row);
+	}
 	if (mem->validation_bits & CPER_MEM_VALID_COLUMN)
 		n += scnprintf(msg + n, len - n, "column: %d ", mem->column);
 	if (mem->validation_bits & CPER_MEM_VALID_BIT_POSITION)
@@ -260,10 +316,12 @@ static int cper_mem_err_location(struct cper_mem_err_compact *mem, char *msg)
 		n += scnprintf(msg + n, len - n, "responder_id: 0x%016llx ",
 			       mem->responder_id);
 	if (mem->validation_bits & CPER_MEM_VALID_TARGET_ID)
-		scnprintf(msg + n, len - n, "target_id: 0x%016llx ",
-			  mem->target_id);
+		n += scnprintf(msg + n, len - n, "target_id: 0x%016llx ",
+			       mem->target_id);
+	if (mem->validation_bits & CPER_MEM_VALID_CHIP_ID)
+		n += scnprintf(msg + n, len - n, "chip_id: %d ",
+			       mem->extended >> CPER_MEM_CHIP_ID_SHIFT);
 
-	msg[n] = '\0';
 	return n;
 }
 
@@ -275,8 +333,7 @@ static int cper_dimm_err_location(struct cper_mem_err_compact *mem, char *msg)
 	if (!msg || !(mem->validation_bits & CPER_MEM_VALID_MODULE_HANDLE))
 		return 0;
 
-	n = 0;
-	len = CPER_REC_LEN - 1;
+	len = CPER_REC_LEN;
 	dmi_memdev_name(mem->mem_dev_handle, &bank, &device);
 	if (bank && device)
 		n = snprintf(msg, len, "DIMM location: %s %s ", bank, device);
@@ -285,7 +342,6 @@ static int cper_dimm_err_location(struct cper_mem_err_compact *mem, char *msg)
 			     "DIMM location: not present. DMI handle: 0x%.4x ",
 			     mem->mem_dev_handle);
 
-	msg[n] = '\0';
 	return n;
 }
 
@@ -304,6 +360,7 @@ void cper_mem_err_pack(const struct cper_sec_mem_err *mem,
 	cmem->requestor_id = mem->requestor_id;
 	cmem->responder_id = mem->responder_id;
 	cmem->target_id = mem->target_id;
+	cmem->extended = mem->extended;
 	cmem->rank = mem->rank;
 	cmem->mem_array_handle = mem->mem_array_handle;
 	cmem->mem_dev_handle = mem->mem_dev_handle;
@@ -313,6 +370,7 @@ const char *cper_mem_err_unpack(struct trace_seq *p,
 				struct cper_mem_err_compact *cmem)
 {
 	const char *ret = trace_seq_buffer_ptr(p);
+	char rcd_decode_str[CPER_REC_LEN];
 
 	if (cper_mem_err_location(cmem, rcd_decode_str))
 		trace_seq_printf(p, "%s", rcd_decode_str);
@@ -327,6 +385,7 @@ static void cper_print_mem(const char *pfx, const struct cper_sec_mem_err *mem,
 	int len)
 {
 	struct cper_mem_err_compact cmem;
+	char rcd_decode_str[CPER_REC_LEN];
 
 	/* Don't trust UEFI 2.1/2.2 structure with bad validation bits */
 	if (len == sizeof(struct cper_sec_mem_err_old) &&
@@ -419,6 +478,63 @@ static void cper_print_pcie(const char *pfx, const struct cper_sec_pcie *pcie,
 	}
 }
 
+static const char * const fw_err_rec_type_strs[] = {
+	"IPF SAL Error Record",
+	"SOC Firmware Error Record Type1 (Legacy CrashLog Support)",
+	"SOC Firmware Error Record Type2",
+};
+
+static void cper_print_fw_err(const char *pfx,
+			      struct acpi_hest_generic_data *gdata,
+			      const struct cper_sec_fw_err_rec_ref *fw_err)
+{
+	void *buf = acpi_hest_get_payload(gdata);
+	u32 offset, length = gdata->error_data_length;
+
+	printk("%s""Firmware Error Record Type: %s\n", pfx,
+	       fw_err->record_type < ARRAY_SIZE(fw_err_rec_type_strs) ?
+	       fw_err_rec_type_strs[fw_err->record_type] : "unknown");
+	printk("%s""Revision: %d\n", pfx, fw_err->revision);
+
+	/* Record Type based on UEFI 2.7 */
+	if (fw_err->revision == 0) {
+		printk("%s""Record Identifier: %08llx\n", pfx,
+		       fw_err->record_identifier);
+	} else if (fw_err->revision == 2) {
+		printk("%s""Record Identifier: %pUl\n", pfx,
+		       &fw_err->record_identifier_guid);
+	}
+
+	/*
+	 * The FW error record may contain trailing data beyond the
+	 * structure defined by the specification. As the fields
+	 * defined (and hence the offset of any trailing data) vary
+	 * with the revision, set the offset to account for this
+	 * variation.
+	 */
+	if (fw_err->revision == 0) {
+		/* record_identifier_guid not defined */
+		offset = offsetof(struct cper_sec_fw_err_rec_ref,
+				  record_identifier_guid);
+	} else if (fw_err->revision == 1) {
+		/* record_identifier not defined */
+		offset = offsetof(struct cper_sec_fw_err_rec_ref,
+				  record_identifier);
+	} else {
+		offset = sizeof(*fw_err);
+	}
+	if (offset > length) {
+		printk("%s""error section length is too small: offset=%d, length=%d\n",
+		       pfx, offset, length);
+		return;
+	}
+
+	buf += offset;
+	length -= offset;
+
+	print_hex_dump(pfx, "", DUMP_PREFIX_OFFSET, 16, 4, buf, length, true);
+}
+
 static void cper_print_tstamp(const char *pfx,
 				   struct acpi_hest_generic_data_v300 *gdata)
 {
@@ -492,7 +608,8 @@ cper_estatus_print_section(const char *pfx, struct acpi_hest_generic_data *gdata
 
 		printk("%ssection_type: ARM processor error\n", newpfx);
 		if (gdata->error_data_length >= sizeof(*arm_err))
-			cper_print_proc_arm(newpfx, arm_err);
+			cper_print_proc_arm(newpfx, arm_err,
+					    gdata->error_data_length);
 		else
 			goto err_section_too_small;
 #endif
@@ -506,6 +623,16 @@ cper_estatus_print_section(const char *pfx, struct acpi_hest_generic_data *gdata
 		else
 			goto err_section_too_small;
 #endif
+	} else if (guid_equal(sec_type, &CPER_SEC_FW_ERR_REC_REF)) {
+		struct cper_sec_fw_err_rec_ref *fw_err = acpi_hest_get_payload(gdata);
+
+		printk("%ssection_type: Firmware Error Record Reference\n",
+		       newpfx);
+		/* The minimal FW Error Record contains 16 bytes */
+		if (gdata->error_data_length >= SZ_16)
+			cper_print_fw_err(newpfx, gdata, fw_err);
+		else
+			goto err_section_too_small;
 	} else {
 		const void *err = acpi_hest_get_payload(gdata);
 
@@ -571,7 +698,7 @@ int cper_estatus_check(const struct acpi_hest_generic_status *estatus)
 	data_len = estatus->data_length;
 
 	apei_estatus_for_each_section(estatus, gdata) {
-		if (sizeof(struct acpi_hest_generic_data) > data_len)
+		if (acpi_hest_get_size(gdata) > data_len)
 			return -EINVAL;
 
 		record_size = acpi_hest_get_record_size(gdata);

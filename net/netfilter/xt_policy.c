@@ -1,10 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* IP tables module for matching IPsec policy
  *
  * Copyright (c) 2004,2005 Patrick McHardy, <kaber@trash.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/kernel.h>
@@ -56,7 +53,7 @@ match_policy_in(const struct sk_buff *skb, const struct xt_policy_info *info,
 		unsigned short family)
 {
 	const struct xt_policy_elem *e;
-	const struct sec_path *sp = skb->sp;
+	const struct sec_path *sp = skb_sec_path(skb);
 	int strict = info->flags & XT_POLICY_MATCH_STRICT;
 	int i, pos;
 
@@ -66,7 +63,7 @@ match_policy_in(const struct sk_buff *skb, const struct xt_policy_info *info,
 		return 0;
 
 	for (i = sp->len - 1; i >= 0; i--) {
-		pos = strict ? i - sp->len + 1 : 0;
+		pos = strict ? sp->len - i - 1 : 0;
 		if (pos >= info->len)
 			return 0;
 		e = &info->pol[pos];

@@ -83,7 +83,7 @@ struct mirror_set {
 	struct work_struct trigger_event;
 
 	unsigned nr_mirrors;
-	struct mirror mirror[0];
+	struct mirror mirror[];
 };
 
 DECLARE_DM_KCOPYD_THROTTLE_WITH_MODULE_PARM(raid1_resync_throttle,
@@ -128,10 +128,9 @@ static void queue_bio(struct mirror_set *ms, struct bio *bio, int rw)
 	spin_lock_irqsave(&ms->lock, flags);
 	should_wake = !(bl->head);
 	bio_list_add(bl, bio);
-	spin_unlock_irqrestore(&ms->lock, flags);
-
 	if (should_wake)
 		wakeup_mirrord(ms);
+	spin_unlock_irqrestore(&ms->lock, flags);
 }
 
 static void dispatch_bios(void *context, struct bio_list *bio_list)
@@ -145,7 +144,7 @@ static void dispatch_bios(void *context, struct bio_list *bio_list)
 
 struct dm_raid1_bio_record {
 	struct mirror *m;
-	/* if details->bi_disk == NULL, details were not saved */
+	/* if details->bi_bdev == NULL, details were not saved */
 	struct dm_bio_details details;
 	region_t write_region;
 };
@@ -274,7 +273,7 @@ static int mirror_flush(struct dm_target *ti)
 	}
 
 	error_bits = -1;
-	dm_io(&io_req, ms->nr_mirrors, io, &error_bits);
+	dm_io(&io_req, ms->nr_mirrors, io, &error_bits, IOPRIO_DEFAULT);
 	if (unlikely(error_bits != 0)) {
 		for (i = 0; i < ms->nr_mirrors; i++)
 			if (test_bit(i, &error_bits))
@@ -364,7 +363,7 @@ static void recover(struct mirror_set *ms, struct dm_region *reg)
 
 	/* hand to kcopyd */
 	if (!errors_handled(ms))
-		set_bit(DM_KCOPYD_IGNORE_ERROR, &flags);
+		flags |= BIT(DM_KCOPYD_IGNORE_ERROR);
 
 	dm_kcopyd_copy(ms->kcopyd_client, &from, ms->nr_mirrors - 1, to,
 		       flags, recovery_complete, reg);
@@ -546,7 +545,7 @@ static void read_async_bio(struct mirror *m, struct bio *bio)
 
 	map_region(&io, m, bio);
 	bio_set_m(bio, m);
-	BUG_ON(dm_io(&io_req, 1, &io, NULL));
+	BUG_ON(dm_io(&io_req, 1, &io, NULL, IOPRIO_DEFAULT));
 }
 
 static inline int region_in_sync(struct mirror_set *ms, region_t region,
@@ -638,9 +637,9 @@ static void write_callback(unsigned long error, void *context)
 	if (!ms->failures.head)
 		should_wake = 1;
 	bio_list_add(&ms->failures, bio);
-	spin_unlock_irqrestore(&ms->lock, flags);
 	if (should_wake)
 		wakeup_mirrord(ms);
+	spin_unlock_irqrestore(&ms->lock, flags);
 }
 
 static void do_write(struct mirror_set *ms, struct bio *bio)
@@ -673,7 +672,7 @@ static void do_write(struct mirror_set *ms, struct bio *bio)
 	 */
 	bio_set_m(bio, get_default_mirror(ms));
 
-	BUG_ON(dm_io(&io_req, ms->nr_mirrors, io, NULL));
+	BUG_ON(dm_io(&io_req, ms->nr_mirrors, io, NULL, IOPRIO_DEFAULT));
 }
 
 static void do_writes(struct mirror_set *ms, struct bio_list *writes)
@@ -779,7 +778,7 @@ static void do_writes(struct mirror_set *ms, struct bio_list *writes)
 			wakeup_mirrord(ms);
 		} else {
 			map_bio(get_default_mirror(ms), bio);
-			generic_make_request(bio);
+			submit_bio_noacct(bio);
 		}
 	}
 }
@@ -878,12 +877,9 @@ static struct mirror_set *alloc_context(unsigned int nr_mirrors,
 					struct dm_target *ti,
 					struct dm_dirty_log *dl)
 {
-	size_t len;
-	struct mirror_set *ms = NULL;
+	struct mirror_set *ms =
+		kzalloc(struct_size(ms, mirror, nr_mirrors), GFP_KERNEL);
 
-	len = sizeof(*ms) + (sizeof(ms->mirror[0]) * nr_mirrors);
-
-	ms = kzalloc(len, GFP_KERNEL);
 	if (!ms) {
 		ti->error = "Cannot allocate mirror context";
 		return NULL;
@@ -985,12 +981,12 @@ static struct dm_dirty_log *create_dirty_log(struct dm_target *ti,
 		return NULL;
 	}
 
-	*args_used = 2 + param_count;
-
-	if (argc < *args_used) {
+	if (param_count > argc - 2) {
 		ti->error = "Insufficient mirror log arguments";
 		return NULL;
 	}
+
+	*args_used = 2 + param_count;
 
 	dl = dm_dirty_log_create(argv[0], ti, mirror_flush, param_count,
 				 argv + 2);
@@ -1193,7 +1189,7 @@ static int mirror_map(struct dm_target *ti, struct bio *bio)
 	struct dm_raid1_bio_record *bio_record =
 	  dm_per_bio_data(bio, sizeof(struct dm_raid1_bio_record));
 
-	bio_record->details.bi_disk = NULL;
+	bio_record->details.bi_bdev = NULL;
 
 	if (rw == WRITE) {
 		/* Save region for mirror_end_io() handler */
@@ -1260,7 +1256,7 @@ static int mirror_end_io(struct dm_target *ti, struct bio *bio,
 		goto out;
 
 	if (unlikely(*error)) {
-		if (!bio_record->details.bi_disk) {
+		if (!bio_record->details.bi_bdev) {
 			/*
 			 * There wasn't enough memory to record necessary
 			 * information for a retry or there was no other
@@ -1285,7 +1281,7 @@ static int mirror_end_io(struct dm_target *ti, struct bio *bio,
 			bd = &bio_record->details;
 
 			dm_bio_restore(bd, bio);
-			bio_record->details.bi_disk = NULL;
+			bio_record->details.bi_bdev = NULL;
 			bio->bi_status = 0;
 
 			queue_bio(ms, bio, rw);
@@ -1295,7 +1291,7 @@ static int mirror_end_io(struct dm_target *ti, struct bio *bio,
 	}
 
 out:
-	bio_record->details.bi_disk = NULL;
+	bio_record->details.bi_bdev = NULL;
 
 	return DM_ENDIO_DONE;
 }
@@ -1437,6 +1433,23 @@ static void mirror_status(struct dm_target *ti, status_type_t type,
 				DMEMIT(" keep_log");
 		}
 
+		break;
+
+	case STATUSTYPE_IMA:
+		DMEMIT_TARGET_NAME_VERSION(ti->type);
+		DMEMIT(",nr_mirrors=%d", ms->nr_mirrors);
+		for (m = 0; m < ms->nr_mirrors; m++) {
+			DMEMIT(",mirror_device_%d=%s", m, ms->mirror[m].dev->name);
+			DMEMIT(",mirror_device_%d_status=%c",
+			       m, device_status_char(&(ms->mirror[m])));
+		}
+
+		DMEMIT(",handle_errors=%c", errors_handled(ms) ? 'y' : 'n');
+		DMEMIT(",keep_log=%c", keep_log(ms) ? 'y' : 'n');
+
+		DMEMIT(",log_type_status=");
+		sz += log->type->status(log, type, result+sz, maxlen-sz);
+		DMEMIT(";");
 		break;
 	}
 }

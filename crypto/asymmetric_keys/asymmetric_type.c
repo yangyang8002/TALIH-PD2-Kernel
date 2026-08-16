@@ -1,23 +1,21 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* Asymmetric public-key cryptography key type
  *
- * See Documentation/crypto/asymmetric-keys.txt
+ * See Documentation/crypto/asymmetric-keys.rst
  *
  * Copyright (C) 2012 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public Licence
- * as published by the Free Software Foundation; either version
- * 2 of the Licence, or (at your option) any later version.
  */
 #include <keys/asymmetric-subtype.h>
 #include <keys/asymmetric-parser.h>
 #include <crypto/public_key.h>
 #include <linux/seq_file.h>
 #include <linux/module.h>
+#include <linux/overflow.h>
 #include <linux/slab.h>
 #include <linux/ctype.h>
 #include <keys/system_keyring.h>
+#include <keys/user-type.h>
 #include "asymmetric_keys.h"
 
 MODULE_LICENSE("GPL");
@@ -86,7 +84,7 @@ struct key *find_asymmetric_key(struct key *keyring,
 	pr_debug("Look up: \"%s\"\n", req);
 
 	ref = keyring_search(make_key_ref(keyring, 1),
-			     &key_type_asymmetric, req);
+			     &key_type_asymmetric, req, true);
 	if (IS_ERR(ref))
 		pr_debug("Request for key '%s' err %ld\n", req, PTR_ERR(ref));
 	kfree(req);
@@ -141,12 +139,17 @@ struct asymmetric_key_id *asymmetric_key_generate_id(const void *val_1,
 						     size_t len_2)
 {
 	struct asymmetric_key_id *kid;
+	size_t kid_sz;
+	size_t len;
 
-	kid = kmalloc(sizeof(struct asymmetric_key_id) + len_1 + len_2,
-		      GFP_KERNEL);
+	if (check_add_overflow(len_1, len_2, &len))
+		return ERR_PTR(-EOVERFLOW);
+	if (check_add_overflow(sizeof(struct asymmetric_key_id), len, &kid_sz))
+		return ERR_PTR(-EOVERFLOW);
+	kid = kmalloc(kid_sz, GFP_KERNEL);
 	if (!kid)
 		return ERR_PTR(-ENOMEM);
-	kid->len = len_1 + len_2;
+	kid->len = len;
 	memcpy(kid->data, val_1, len_1);
 	memcpy(kid->data + len_1, val_2, len_2);
 	return kid;
@@ -155,7 +158,8 @@ EXPORT_SYMBOL_GPL(asymmetric_key_generate_id);
 
 /**
  * asymmetric_key_id_same - Return true if two asymmetric keys IDs are the same.
- * @kid_1, @kid_2: The key IDs to compare
+ * @kid1: The key ID to compare
+ * @kid2: The key ID to compare
  */
 bool asymmetric_key_id_same(const struct asymmetric_key_id *kid1,
 			    const struct asymmetric_key_id *kid2)
@@ -171,7 +175,8 @@ EXPORT_SYMBOL_GPL(asymmetric_key_id_same);
 /**
  * asymmetric_key_id_partial - Return true if two asymmetric keys IDs
  * partially match
- * @kid_1, @kid_2: The key IDs to compare
+ * @kid1: The key ID to compare
+ * @kid2: The key ID to compare
  */
 bool asymmetric_key_id_partial(const struct asymmetric_key_id *kid1,
 			       const struct asymmetric_key_id *kid2)
@@ -538,6 +543,45 @@ out:
 	return ret;
 }
 
+int asymmetric_key_eds_op(struct kernel_pkey_params *params,
+			  const void *in, void *out)
+{
+	const struct asymmetric_key_subtype *subtype;
+	struct key *key = params->key;
+	int ret;
+
+	pr_devel("==>%s()\n", __func__);
+
+	if (key->type != &key_type_asymmetric)
+		return -EINVAL;
+	subtype = asymmetric_key_subtype(key);
+	if (!subtype ||
+	    !key->payload.data[0])
+		return -EINVAL;
+	if (!subtype->eds_op)
+		return -ENOTSUPP;
+
+	ret = subtype->eds_op(params, in, out);
+
+	pr_devel("<==%s() = %d\n", __func__, ret);
+	return ret;
+}
+
+static int asymmetric_key_verify_signature(struct kernel_pkey_params *params,
+					   const void *in, const void *in2)
+{
+	struct public_key_signature sig = {
+		.s_size		= params->in2_len,
+		.digest_size	= params->in_len,
+		.encoding	= params->encoding,
+		.hash_algo	= params->hash_algo,
+		.digest		= (void *)in,
+		.s		= (void *)in2,
+	};
+
+	return verify_signature(params->key, &sig);
+}
+
 struct key_type key_type_asymmetric = {
 	.name			= "asymmetric",
 	.preparse		= asymmetric_key_preparse,
@@ -548,6 +592,9 @@ struct key_type key_type_asymmetric = {
 	.destroy		= asymmetric_key_destroy,
 	.describe		= asymmetric_key_describe,
 	.lookup_restriction	= asymmetric_lookup_restriction,
+	.asym_query		= query_asymmetric_key,
+	.asym_eds_op		= asymmetric_key_eds_op,
+	.asym_verify_signature	= asymmetric_key_verify_signature,
 };
 EXPORT_SYMBOL_GPL(key_type_asymmetric);
 

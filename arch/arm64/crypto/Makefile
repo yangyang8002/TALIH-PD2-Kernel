@@ -1,14 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # linux/arch/arm64/crypto/Makefile
 #
 # Copyright (C) 2014 Linaro Ltd <ard.biesheuvel@linaro.org>
 #
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License version 2 as
-# published by the Free Software Foundation.
-#
-
-ccflags-y += -Wno-unneeded-internal-declaration
 
 obj-$(CONFIG_CRYPTO_SHA1_ARM64_CE) += sha1-ce.o
 sha1-ce-y := sha1-ce-glue.o sha1-ce-core.o
@@ -31,11 +26,11 @@ sm4-ce-y := sm4-ce-glue.o sm4-ce-core.o
 obj-$(CONFIG_CRYPTO_GHASH_ARM64_CE) += ghash-ce.o
 ghash-ce-y := ghash-ce-glue.o ghash-ce-core.o
 
+obj-$(CONFIG_CRYPTO_POLYVAL_ARM64_CE) += polyval-ce.o
+polyval-ce-y := polyval-ce-glue.o polyval-ce-core.o
+
 obj-$(CONFIG_CRYPTO_CRCT10DIF_ARM64_CE) += crct10dif-ce.o
 crct10dif-ce-y := crct10dif-ce-core.o crct10dif-ce-glue.o
-
-obj-$(CONFIG_CRYPTO_CRC32_ARM64_CE) += crc32-ce.o
-crc32-ce-y:= crc32-ce-core.o crc32-ce-glue.o
 
 obj-$(CONFIG_CRYPTO_AES_ARM64_CE) += aes-ce-cipher.o
 aes-ce-cipher-y := aes-ce-core.o aes-ce-glue.o
@@ -62,6 +57,9 @@ obj-$(CONFIG_CRYPTO_POLY1305_NEON) += poly1305-neon.o
 poly1305-neon-y := poly1305-core.o poly1305-glue.o
 AFLAGS_poly1305-core.o += -Dpoly1305_init=poly1305_init_arm64
 
+obj-$(CONFIG_CRYPTO_NHPOLY1305_NEON) += nhpoly1305-neon.o
+nhpoly1305-neon-y := nh-neon-core.o nhpoly1305-neon-glue.o
+
 obj-$(CONFIG_CRYPTO_AES_ARM64) += aes-arm64.o
 aes-arm64-y := aes-cipher-core.o aes-cipher-glue.o
 
@@ -73,18 +71,13 @@ CFLAGS_aes-glue-ce.o	:= -DUSE_V8_CRYPTO_EXTENSIONS
 $(obj)/aes-glue-%.o: $(src)/aes-glue.c FORCE
 	$(call if_changed_rule,cc_o_c)
 
-ifdef REGENERATE_ARM64_CRYPTO
 quiet_cmd_perlasm = PERLASM $@
       cmd_perlasm = $(PERL) $(<) void $(@)
 
-$(src)/poly1305-core.S_shipped: $(src)/poly1305-armv8.pl
+$(obj)/%-core.S: $(src)/%-armv8.pl
 	$(call cmd,perlasm)
 
-$(src)/sha256-core.S_shipped: $(src)/sha512-armv8.pl
+$(obj)/sha256-core.S: $(src)/sha512-armv8.pl
 	$(call cmd,perlasm)
 
-$(src)/sha512-core.S_shipped: $(src)/sha512-armv8.pl
-	$(call cmd,perlasm)
-endif
-
-targets += poly1305-core.S sha256-core.S sha512-core.S
+clean-files += poly1305-core.S sha256-core.S sha512-core.S

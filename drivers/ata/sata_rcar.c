@@ -1,14 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Renesas R-Car SATA driver
  *
  * Author: Vladimir Barinov <source@cogentembedded.com>
  * Copyright (C) 2013-2015 Cogent Embedded, Inc.
  * Copyright (C) 2013-2015 Renesas Solutions Corp.
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -421,8 +417,8 @@ static void sata_rcar_tf_read(struct ata_port *ap, struct ata_taskfile *tf)
 {
 	struct ata_ioports *ioaddr = &ap->ioaddr;
 
-	tf->command = sata_rcar_check_status(ap);
-	tf->feature = ioread32(ioaddr->error_addr);
+	tf->status = sata_rcar_check_status(ap);
+	tf->error = ioread32(ioaddr->error_addr);
 	tf->nsect = ioread32(ioaddr->nsect_addr);
 	tf->lbal = ioread32(ioaddr->lbal_addr);
 	tf->lbam = ioread32(ioaddr->lbam_addr);
@@ -915,7 +911,6 @@ static int sata_rcar_probe(struct platform_device *pdev)
 
 	host = ata_host_alloc(dev, 1);
 	if (!host) {
-		dev_err(dev, "ata_host_alloc failed\n");
 		ret = -ENOMEM;
 		goto err_pm_put;
 	}

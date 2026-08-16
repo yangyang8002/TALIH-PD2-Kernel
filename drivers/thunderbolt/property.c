@@ -1,16 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Thunderbolt XDomain property support
  *
  * Copyright (C) 2017, Intel Corporation
  * Authors: Michael Jamet <michael.jamet@intel.com>
  *          Mika Westerberg <mika.westerberg@linux.intel.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/err.h>
+#include <linux/overflow.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/uuid.h>
@@ -55,13 +53,18 @@ static inline void format_dwdata(void *dst, const void *src, size_t dwords)
 static bool tb_property_entry_valid(const struct tb_property_entry *entry,
 				  size_t block_len)
 {
+	u32 end;
+
 	switch (entry->type) {
 	case TB_PROPERTY_TYPE_DIRECTORY:
 	case TB_PROPERTY_TYPE_DATA:
 	case TB_PROPERTY_TYPE_TEXT:
+		if (!entry->length)
+			return false;
 		if (entry->length > block_len)
 			return false;
-		if (entry->value + entry->length > block_len)
+		if (check_add_overflow(entry->value, entry->length, &end) ||
+		    end > block_len)
 			return false;
 		break;
 
@@ -173,20 +176,32 @@ static struct tb_property_dir *__tb_property_parse_dir(const u32 *block,
 	if (!dir)
 		return NULL;
 
+	INIT_LIST_HEAD(&dir->properties);
+
 	if (is_root) {
 		content_offset = dir_offset + 2;
 		content_len = dir_len;
+		if (content_offset + content_len > block_len) {
+			tb_property_free_dir(dir);
+			return NULL;
+		}
 	} else {
+		if (dir_len < 4) {
+			tb_property_free_dir(dir);
+			return NULL;
+		}
 		dir->uuid = kmemdup(&block[dir_offset], sizeof(*dir->uuid),
 				    GFP_KERNEL);
+		if (!dir->uuid) {
+			tb_property_free_dir(dir);
+			return NULL;
+		}
 		content_offset = dir_offset + 4;
 		content_len = dir_len - 4; /* Length includes UUID */
 	}
 
 	entries = (const struct tb_property_entry *)&block[content_offset];
 	nentries = content_len / (sizeof(*entries) / 4);
-
-	INIT_LIST_HEAD(&dir->properties);
 
 	for (i = 0; i < nentries; i++) {
 		struct tb_property *property;
@@ -498,6 +513,77 @@ ssize_t tb_property_format_dir(const struct tb_property_dir *dir, u32 *block,
 
 	ret = __tb_property_format_dir(dir, block, 0, block_len);
 	return ret < 0 ? ret : 0;
+}
+
+/**
+ * tb_property_copy_dir() - Take a deep copy of directory
+ * @dir: Directory to copy
+ *
+ * This function takes a deep copy of @dir and returns back the copy. In
+ * case of error returns %NULL. The resulting directory needs to be
+ * released by calling tb_property_free_dir().
+ */
+struct tb_property_dir *tb_property_copy_dir(const struct tb_property_dir *dir)
+{
+	struct tb_property *property, *p = NULL;
+	struct tb_property_dir *d;
+
+	if (!dir)
+		return NULL;
+
+	d = tb_property_create_dir(dir->uuid);
+	if (!d)
+		return NULL;
+
+	list_for_each_entry(property, &dir->properties, list) {
+		struct tb_property *p;
+
+		p = tb_property_alloc(property->key, property->type);
+		if (!p)
+			goto err_free;
+
+		p->length = property->length;
+
+		switch (property->type) {
+		case TB_PROPERTY_TYPE_DIRECTORY:
+			p->value.dir = tb_property_copy_dir(property->value.dir);
+			if (!p->value.dir)
+				goto err_free;
+			break;
+
+		case TB_PROPERTY_TYPE_DATA:
+			p->value.data = kmemdup(property->value.data,
+						property->length * 4,
+						GFP_KERNEL);
+			if (!p->value.data)
+				goto err_free;
+			break;
+
+		case TB_PROPERTY_TYPE_TEXT:
+			p->value.text = kzalloc(p->length * 4, GFP_KERNEL);
+			if (!p->value.text)
+				goto err_free;
+			strcpy(p->value.text, property->value.text);
+			break;
+
+		case TB_PROPERTY_TYPE_VALUE:
+			p->value.immediate = property->value.immediate;
+			break;
+
+		default:
+			break;
+		}
+
+		list_add_tail(&p->list, &d->properties);
+	}
+
+	return d;
+
+err_free:
+	kfree(p);
+	tb_property_free_dir(d);
+
+	return NULL;
 }
 
 /**

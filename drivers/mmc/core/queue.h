@@ -40,15 +40,10 @@ struct mmc_blk_ioc_data;
 struct mmc_blk_request {
 	struct mmc_request	mrq;
 	struct mmc_command	sbc;
-#ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-	struct mmc_request	mrq_que;
-	struct mmc_command	que;
-#endif
 	struct mmc_command	cmd;
 	struct mmc_command	stop;
 	struct mmc_data		data;
 };
-
 
 /**
  * enum mmc_drv_op - enumerates the operations in the mmc_queue_req
@@ -73,11 +68,6 @@ struct mmc_queue_req {
 	int			drv_op_result;
 	void			*drv_op_data;
 	unsigned int		ioc_count;
-#ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-	atomic_t		index;
-	struct request		*req;
-	struct mmc_async_req	areq;
-#endif
 	int			retries;
 };
 
@@ -87,16 +77,11 @@ struct mmc_queue {
 	struct blk_mq_tag_set	tag_set;
 	struct mmc_blk_data	*blkdata;
 	struct request_queue	*queue;
-#ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-	struct mmc_queue_req	mqrq[EMMC_MAX_QUEUE_DEPTH];
-	bool			use_swcq;
-#endif
+	spinlock_t		lock;
 	int			in_flight[MMC_ISSUE_MAX];
 	unsigned int		cqe_busy;
 #define MMC_CQE_DCMD_BUSY	BIT(0)
-#define MMC_CQE_QUEUE_FULL	BIT(1)
 	bool			busy;
-	bool			use_cqe;
 	bool			recovery_needed;
 	bool			in_recovery;
 	bool			rw_wait;
@@ -109,13 +94,7 @@ struct mmc_queue {
 	struct work_struct	complete_work;
 };
 
-#ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-#define IS_RT_CLASS_REQ(x)	\
-	(IOPRIO_PRIO_CLASS(req_get_ioprio(x)) == IOPRIO_CLASS_RT)
-#endif
-
-extern int mmc_init_queue(struct mmc_queue *, struct mmc_card *, spinlock_t *,
-			  const char *);
+struct gendisk *mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card);
 extern void mmc_cleanup_queue(struct mmc_queue *);
 extern void mmc_queue_suspend(struct mmc_queue *);
 extern void mmc_queue_resume(struct mmc_queue *);

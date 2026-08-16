@@ -23,7 +23,7 @@ void pci_add_resource_offset(struct list_head *resources, struct resource *res,
 
 	entry = resource_list_create_entry(res, 0);
 	if (!entry) {
-		printk(KERN_ERR "PCI: can't add host bridge window %pR\n", res);
+		pr_err("PCI: can't add host bridge window %pR\n", res);
 		return;
 	}
 
@@ -75,6 +75,27 @@ struct resource *pci_bus_resource_n(const struct pci_bus *bus, int n)
 	return NULL;
 }
 EXPORT_SYMBOL_GPL(pci_bus_resource_n);
+
+void pci_bus_remove_resource(struct pci_bus *bus, struct resource *res)
+{
+	struct pci_bus_resource *bus_res, *tmp;
+	int i;
+
+	for (i = 0; i < PCI_BRIDGE_RESOURCE_NUM; i++) {
+		if (bus->resource[i] == res) {
+			bus->resource[i] = NULL;
+			return;
+		}
+	}
+
+	list_for_each_entry_safe(bus_res, tmp, &bus->resources, list) {
+		if (bus_res->res == res) {
+			list_del(&bus_res->list);
+			kfree(bus_res);
+			return;
+		}
+	}
+}
 
 void pci_bus_remove_resources(struct pci_bus *bus)
 {
@@ -288,8 +309,7 @@ bool pci_bus_clip_resource(struct pci_dev *dev, int idx)
 		res->end = end;
 		res->flags &= ~IORESOURCE_UNSET;
 		orig_res.flags &= ~IORESOURCE_UNSET;
-		pci_printk(KERN_DEBUG, dev, "%pR clipped to %pR\n",
-				 &orig_res, res);
+		pci_info(dev, "%pR clipped to %pR\n", &orig_res, res);
 
 		return true;
 	}
@@ -414,11 +434,9 @@ struct pci_bus *pci_bus_get(struct pci_bus *bus)
 		get_device(&bus->dev);
 	return bus;
 }
-EXPORT_SYMBOL(pci_bus_get);
 
 void pci_bus_put(struct pci_bus *bus)
 {
 	if (bus)
 		put_device(&bus->dev);
 }
-EXPORT_SYMBOL(pci_bus_put);
