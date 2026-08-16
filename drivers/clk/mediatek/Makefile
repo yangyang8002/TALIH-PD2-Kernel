@@ -82,3 +82,17 @@ obj-$(CONFIG_COMMON_CLK_MT8192_VDECSYS) += clk-mt8192-vdec.o
 obj-$(CONFIG_COMMON_CLK_MT8192_VENCSYS) += clk-mt8192-venc.o
 obj-$(CONFIG_COMMON_CLK_MT8516) += clk-mt8516.o
 obj-$(CONFIG_COMMON_CLK_MT8516_AUDSYS) += clk-mt8516-aud.o
+
+obj-$(CONFIG_COMMON_CLK_MT6893) += clk-mt6885.o clk-mt6885-pg.o clkchk-mt6885.o clk-fmeter-mt6885.o
+obj-$(CONFIG_COMMON_CLK_MT6893_APU) += clk-mt6885-apu.o
+obj-$(CONFIG_COMMON_CLK_MT6893_AUDIOSYS) += clk-mt6885-audsys.o
+obj-$(CONFIG_COMMON_CLK_MT6893_CAM) += clk-mt6885-cam.o
+obj-$(CONFIG_COMMON_CLK_MT6893_IMG) += clk-mt6885-img.o
+obj-$(CONFIG_COMMON_CLK_MT6893_I2C) += clk-mt6885-i2c.o
+obj-$(CONFIG_COMMON_CLK_MT6893_IPESYS) += clk-mt6885-ipe.o
+obj-$(CONFIG_COMMON_CLK_MT6893_MDPSYS) += clk-mt6885-mdp.o
+obj-$(CONFIG_COMMON_CLK_MT6893_MFGCFG) += clk-mt6885-mfgcfg.o
+obj-$(CONFIG_COMMON_CLK_MT6893_MMSYS) += clk-mt6885-mm.o
+obj-$(CONFIG_COMMON_CLK_MT6893_SCP_ADSP) += clk-mt6885-scp_adsp.o
+obj-$(CONFIG_COMMON_CLK_MT6893_VDE) += clk-mt6885-vde.o
+obj-$(CONFIG_COMMON_CLK_MT6893_VEN) += clk-mt6885-ven.o

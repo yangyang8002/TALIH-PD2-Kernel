@@ -590,3 +590,119 @@ config COMMON_CLK_MT8516_AUDSYS
 	  This driver supports MediaTek MT8516 audsys clocks.
 
 endmenu
+
+config COMMON_CLK_MT6893
+	tristate "Clock driver for MediaTek MT6893"
+	depends on ARM64 || ARCH_MEDIATEK || COMPILE_TEST
+	select COMMON_CLK_MEDIATEK
+	default MACH_MT6893
+	help
+	  This driver supports MediaTek MT6893 basic clocks,
+	  which is used to control basic clock output.
+	  If you wish to use clock resources from the MT6893 SOC,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_APU
+	tristate "Clock driver for MediaTek MT6893 apu"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 apu clocks,
+	  which is used to control apu clock output.
+	  If you wish to use clock resources from the apu device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_AUDIOSYS
+	tristate "Clock driver for MediaTek MT6893 audiosys"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 audiosys clocks,
+	  which is used to control audiosys clock output.
+	  If you wish to use clock resources from the audiosys device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_CAM
+	tristate "Clock driver for MediaTek MT6893 cam"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 cam clocks,
+	  which is used to control cam clock output.
+	  If you wish to use clock resources from the cam device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_IMG
+	tristate "Clock driver for MediaTek MT6893 img"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 img clocks,
+	  which is used to control img clock output.
+	  If you wish to use clock resources from the img device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_I2C
+	tristate "Clock driver for MediaTek MT6893 i2c"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 i2c clocks,
+	  which is used to control i2c clock output.
+	  If you wish to use clock resources from the i2c device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_IPESYS
+	tristate "Clock driver for MediaTek MT6893 ipesys"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 ipesys clocks,
+	  which is used to control ipesys clock output.
+	  If you wish to use clock resources from the ipesys device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_MDPSYS
+	tristate "Clock driver for MediaTek MT6893 mdpsys"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 mdpsys clocks,
+	  which is used to control mdpsys clock output.
+	  If you wish to use clock resources from the mdpsys device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_MFGCFG
+	tristate "Clock driver for MediaTek MT6893 mfgcfg"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 mfgcfg clocks,
+	  which is used to control mfgcfg clock output.
+	  If you wish to use clock resources from the mfgcfg device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_MMSYS
+	tristate "Clock driver for MediaTek MT6893 mmsys"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 mmsys clocks,
+	  which is used to control mmsys clock output.
+	  If you wish to use clock resources from the mmsys device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_SCP_ADSP
+	tristate "Clock driver for MediaTek MT6893 scp_adsp"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 scp_adsp clocks,
+	  which is used to control scp_adsp clock output.
+	  If you wish to use clock resources from the scp_adsp device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_VDE
+	tristate "Clock driver for MediaTek MT6893 vde"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 vde clocks,
+	  which is used to control vde clock output.
+	  If you wish to use clock resources from the vde device,
+	  say Y. Otherwise, say N.
+
+config COMMON_CLK_MT6893_VEN
+	tristate "Clock driver for MediaTek MT6893 ven"
+	depends on COMMON_CLK_MT6893
+	help
+	  This driver supports MediaTek MT6893 ven clocks,

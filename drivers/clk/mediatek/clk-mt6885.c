@@ -2187,7 +2187,7 @@ static const struct mtk_gate_regs ifrao4_cg_regs = {
 		.parent_name = _parent,			\
 		.regs = &ifrao0_cg_regs,			\
 		.shift = _shift,			\
-		.ops = &mtk_clk_gate_ops_setclr_dummy,	\
+		.ops = &mtk_clk_gate_ops_setclr,	\
 	}
 
 #define GATE_IFRAO1_DUMMY(_id, _name, _parent, _shift) {	\
@@ -2196,7 +2196,7 @@ static const struct mtk_gate_regs ifrao4_cg_regs = {
 		.parent_name = _parent,			\
 		.regs = &ifrao1_cg_regs,			\
 		.shift = _shift,			\
-		.ops = &mtk_clk_gate_ops_setclr_dummy,	\
+		.ops = &mtk_clk_gate_ops_setclr,	\
 	}
 
 #define GATE_IFRAO2_DUMMY(_id, _name, _parent, _shift) {	\
@@ -2205,7 +2205,7 @@ static const struct mtk_gate_regs ifrao4_cg_regs = {
 		.parent_name = _parent,			\
 		.regs = &ifrao2_cg_regs,			\
 		.shift = _shift,			\
-		.ops = &mtk_clk_gate_ops_setclr_dummy,	\
+		.ops = &mtk_clk_gate_ops_setclr,	\
 	}
 
 #define GATE_IFRAO3_DUMMY(_id, _name, _parent, _shift) {	\
@@ -2214,7 +2214,7 @@ static const struct mtk_gate_regs ifrao4_cg_regs = {
 		.parent_name = _parent,			\
 		.regs = &ifrao3_cg_regs,			\
 		.shift = _shift,			\
-		.ops = &mtk_clk_gate_ops_setclr_dummy,	\
+		.ops = &mtk_clk_gate_ops_setclr,	\
 	}
 
 #define GATE_IFRAO4_DUMMY(_id, _name, _parent, _shift) {	\
@@ -2223,7 +2223,7 @@ static const struct mtk_gate_regs ifrao4_cg_regs = {
 		.parent_name = _parent,			\
 		.regs = &ifrao4_cg_regs,			\
 		.shift = _shift,			\
-		.ops = &mtk_clk_gate_ops_setclr_dummy,	\
+		.ops = &mtk_clk_gate_ops_setclr,	\
 	}
 
 #define GATE_IFRAO4_IGN(_id, _name, _parent, _shift) {	\
@@ -2232,7 +2232,7 @@ static const struct mtk_gate_regs ifrao4_cg_regs = {
 		.parent_name = _parent,			\
 		.regs = &ifrao4_cg_regs,			\
 		.shift = _shift,			\
-		.ops = &mtk_clk_gate_ops_setclr_dummy,	\
+		.ops = &mtk_clk_gate_ops_setclr,	\
 		.flags = CLK_IGNORE_UNUSED,			\
 	}
 
@@ -2412,6 +2412,7 @@ static const struct mtk_gate ifrao_clks[] = {
 #define PLL_CFLAGS		PLL_AO
 #else
 #define PLL_CFLAGS		(0)
+#define EN_BIT_CTRL		((1 << 3))
 #endif
 
 #define PLL(_id, _name, _reg, _en_reg, _en_mask, _pll_en_bit,		\
