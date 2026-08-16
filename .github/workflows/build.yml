@@ -1,0 +1,71 @@
+name: Build TALIH-PD2 (5.15 GKI + SukiSU + susfs)
+
+on:
+  push:
+    branches: [5.15-gki-port]
+  pull_request:
+    branches: [5.15-gki-port]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+
+      - name: Checkout SukiSU-Ultra (KernelSU) into KernelSU/
+        run: |
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/SukiSU-Ultra/SukiSU-Ultra.git KernelSU
+          git -C KernelSU checkout 0ca744a88835144c58d8256ebb32c279edabfcde
+
+      - name: Apply susfs <-> KernelSU integration patch
+        run: |
+          git -C KernelSU apply --check ../patch/11_enable_susfs_for_sukisu.patch
+          git -C KernelSU apply ../patch/11_enable_susfs_for_sukisu.patch
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm libelf-dev libssl-dev \
+            zlib1g-dev flex bison bc pahole
+          clang --version | head -2
+
+      - name: Configure (gki_defconfig + KSU + susfs)
+        run: |
+          export ARCH=arm64 LLVM=1
+          make gki_defconfig
+          scripts/config \
+            --enable KSU \
+            --enable KSU_SUSFS \
+            --enable KSU_SUSFS_SUS_PATH \
+            --enable KSU_SUSFS_SUS_MOUNT \
+            --enable KSU_SUSFS_SUS_KSTAT \
+            --enable KSU_SUSFS_SPOOF_UNAME \
+            --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            --enable KSU_SUSFS_OPEN_REDIRECT \
+            --enable KSU_SUSFS_SUS_MAP
+          make olddefconfig
+          grep -E '^CONFIG_KSU(=|_SUSFS)' .config | sort
+
+      - name: Build kernel (full, incl. LTO link)
+        run: |
+          export ARCH=arm64 LLVM=1
+          make -j$(nproc)
+
+      - name: Verify artifacts
+        run: |
+          ls -la vmlinux arch/arm64/boot/Image arch/arm64/boot/Image.gz 2>/dev/null
+          echo "=== susfs/sukisu symbols in vmlinux ==="
+          nm vmlinux | grep -iE 'susfs|ksu_cred|is_ksu_domain' | head -30
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmlinux
+          path: |
+            vmlinux
+            arch/arm64/boot/Image
+          if-no-files-found: error
