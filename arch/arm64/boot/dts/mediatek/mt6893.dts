@@ -17,7 +17,6 @@
 #include <dt-bindings/soc/mediatek,boot-mode.h>
 #include <dt-bindings/spmi/spmi.h>
 #include <dt-bindings/phy/phy.h>
-#include <generated/autoconf.h>
 
 / {
 	model = "MT6893";
