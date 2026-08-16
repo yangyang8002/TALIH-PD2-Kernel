@@ -51,6 +51,7 @@ jobs:
             --enable COMMON_CLK_MT6893 \
             --enable PINCTRL_MT6885 \
             --enable COMPILE_TEST \
+            --enable ARCH_MEDIATEK \
             --enable MTK_PMIC_WRAP \
             --enable MFD_MT6397 \
             --enable REGULATOR_MT6359 \
@@ -67,10 +68,12 @@ jobs:
         run: |
           export ARCH=arm64 LLVM=1
           make -j$(nproc)
+          make -j$(nproc) dtbs
 
       - name: Verify artifacts
         run: |
           ls -la vmlinux arch/arm64/boot/Image arch/arm64/boot/Image.gz 2>/dev/null
+          ls -la arch/arm64/boot/dts/mediatek/mt6893.dtb arch/arm64/boot/dts/mediatek/ls12_mt8797_wifi_64.dtb arch/arm64/boot/dts/mediatek/ls14_mt8797_wifi_64.dtb 2>/dev/null
           echo "=== susfs/sukisu symbols in vmlinux ==="
           nm vmlinux | grep -iE 'susfs|ksu_cred|is_ksu_domain' | head -30
 
@@ -81,4 +84,7 @@ jobs:
           path: |
             vmlinux
             arch/arm64/boot/Image
+            arch/arm64/boot/dts/mediatek/mt6893.dtb
+            arch/arm64/boot/dts/mediatek/ls12_mt8797_wifi_64.dtb
+            arch/arm64/boot/dts/mediatek/ls14_mt8797_wifi_64.dtb
           if-no-files-found: error
