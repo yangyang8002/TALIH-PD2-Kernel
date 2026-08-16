@@ -178,3 +178,7 @@ config PINCTRL_MT6397
 	select PINCTRL_MTK
 
 endmenu
+config PINCTRL_MT6885
+	bool "MediaTek MT6885 pin control"
+	default n
+	select PINCTRL_MTK_PARIS
