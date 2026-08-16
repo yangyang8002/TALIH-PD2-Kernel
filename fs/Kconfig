@@ -388,3 +388,51 @@ config IO_WQ
 	bool
 
 endmenu
+
+menuconfig KSU_SUSFS
+	bool "KernelSU SUSFS v2.2.0 support"
+	depends on KSU
+	default n
+	help
+	  KernelSU SUSFS (susfs) v2.2.0 — stealth filesystem for hiding root.
+	  TALPAD-PD2 local susfs 2.2.0.
+
+if KSU_SUSFS
+
+config KSU_SUSFS_SUS_PATH
+	bool "Enable SUS_PATH"
+	default y
+
+config KSU_SUSFS_SUS_MOUNT
+	bool "Enable SUS_MOUNT"
+	default y
+
+config KSU_SUSFS_SUS_KSTAT
+	bool "Enable SUS_KSTAT"
+	default y
+
+config KSU_SUSFS_SPOOF_UNAME
+	bool "Enable spoofing uname"
+	default y
+
+config KSU_SUSFS_ENABLE_LOG
+	bool "Enable SUSFS log"
+	default n
+
+config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+	bool "Hide KSU and SUSFS symbols"
+	default y
+
+config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+	bool "Enable spoofing /proc/cmdline or /proc/bootconfig"
+	default y
+
+config KSU_SUSFS_OPEN_REDIRECT
+	bool "Enable Open Redirect"
+	default y
+
+config KSU_SUSFS_SUS_MAP
+	bool "Enable SUS_MAP"
+	default y
+
+endif
