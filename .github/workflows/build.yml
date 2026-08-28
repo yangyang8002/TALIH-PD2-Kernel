@@ -25,26 +25,11 @@ jobs:
             zlib1g-dev flex bison bc pahole
           clang --version | head -2
 
-      - name: Configure (gki_defconfig + KSU + MTK drivers, KASLR off)
+      - name: Configure (talpd_defconfig = server .config, KASLR off)
         run: |
           export ARCH=arm64 LLVM=1
-          make gki_defconfig
-          scripts/config \
-            --enable KSU \
-            --enable COMMON_CLK_MT6893 \
-            --enable PINCTRL_MT6885 \
-            --enable COMPILE_TEST \
-            --enable ARCH_MEDIATEK \
-            --enable MTK_PMIC_WRAP \
-            --enable MFD_MT6397 \
-            --enable REGULATOR_MT6359 \
-            --enable MTK_CMDQ_MBOX \
-            --enable MEDIATEK_WATCHDOG \
-            --enable SERIAL_8250_MT6577 \
-            --enable MMC_MTK \
-            --disable LTO_CLANG_FULL \
-            --enable LTO_CLANG_THIN \
-            --disable RANDOMIZE_BASE
+          make talpd_defconfig
+          scripts/config --disable RANDOMIZE_BASE
           make olddefconfig
           grep -E '^CONFIG_KSU=|^CONFIG_COMMON_CLK_MT6893|^CONFIG_PINCTRL_MT6885|^CONFIG_LTO_CLANG|^CONFIG_RANDOMIZE_BASE' .config | sort
 
