@@ -2,7 +2,7 @@ name: Build and Release Kernel
 
 on:
   push:
-    branches: [ main, master, resukisu-susfs ]
+    branches: [ main, master, resukisu-susfs, fix-charge-otg ]
     tags: [ '*' ]
   workflow_dispatch:
 
@@ -15,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev libc6-dev linux-libc-dev device-tree-compiler cpio gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf git wget xz-utils python3 python3-pip patch
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev libc6-dev linux-libc-dev device-tree-compiler cpio gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf git wget xz-utils python3 python3-pip patch unzip
 
       - name: Pull ReSukiSU (latest main) and integrate
         run: |
@@ -43,27 +43,104 @@ jobs:
           name: kernel-image
           path: |
             out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/Image
             out/System.map
             out/vmlinux
           retention-days: 7
 
-  release:
+  # 用官方 release boot-resukisu-susfs220.img 作底座，只替换内核并去掉 Magisk，
+  # 产出一个可直接 fastboot flash boot 的镜像（保留原 dtb+ramdisk+vbmeta）。
+  package-boot:
     needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download built kernel
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-image
+
+      - name: Prepare raw Image
+        run: |
+          ls -la
+          # magiskboot 习惯使用未压缩的 Image，由它负责重新压缩
+          gunzip -c Image.gz > Image.new
+          mv Image.new Image
+          ls -la Image Image.gz || true
+          file Image || true
+
+      - name: Get magiskboot (x86_64, from Magisk APK)
+        run: |
+          wget -q -O Magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v26.1/Magisk-v26.1.apk"
+          unzip -o -j Magisk.apk "lib/x86_64/libmagiskboot.so" -d magiskboot_xtract
+          mv magiskboot_xtract/libmagiskboot.so magiskboot
+          chmod +x magiskboot
+          ./magiskboot 2>&1 | head -5 || true
+
+      - name: Download base boot image (release resukisu-susfs v2.2.0)
+        run: |
+          wget -q -O base-boot.img "https://github.com/yangyang8002/TALIH-PD2-Kernel/releases/download/resukisu-susfs-v2.2.0/boot-resukisu-susfs220.img"
+          ls -la base-boot.img
+          file base-boot.img
+
+      - name: Repack boot image (swap kernel, remove Magisk)
+        run: |
+          rm -rf work && mkdir -p work
+          cd work
+          ../magiskboot unpack ../base-boot.img
+
+          echo "=== before: ramdisk magisk markers ==="
+          (cpio -it < ramdisk.cpio 2>/dev/null | grep -iE 'magisk|overlay.d|\.backup|magiskinit' || echo "none (ramdisk already Magisk-free)")
+
+          # 只换内核；ramdisk/dtb/vbmeta 沿用官方 release（已无 Magisk）
+          cp ../Image kernel
+
+          OUT="../boot-fixed-${{ github.sha }}.img"
+          ../magiskboot repack ../base-boot.img "$OUT"
+
+          echo "=== output ==="
+          ls -la "$OUT" ../Image
+          sha256sum "$OUT"
+
+          # 自检：解包产物，确认内核已替换且 ramdisk 无 magisk
+          ../magiskboot unpack "$OUT" >/dev/null 2>&1 || true
+          echo "=== after: ramdisk magisk markers ==="
+          (cpio -it < ramdisk.cpio 2>/dev/null | grep -iE 'magisk|overlay.d|\.backup|magiskinit' || echo "none (Magisk removed)")
+          echo "OUT_NAME=boot-fixed-${{ github.sha }}.img" >> "$GITHUB_ENV"
+
+      - name: Upload boot image
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-image
+          path: |
+            boot-fixed-*.img
+            work/kernel
+            work/ramdisk.cpio
+          retention-days: 7
+
+  release:
+    needs: package-boot
     runs-on: ubuntu-22.04
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
-      - name: Download Image.gz
+      - name: Download kernel
         uses: actions/download-artifact@v4
         with:
           name: kernel-image
+
+      - name: Download boot image
+        uses: actions/download-artifact@v4
+        with:
+          name: boot-image
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Kernel MT8797 ${{ github.ref_name }}
-          body: Kernel Image.gz for MT8797 (ReSukiSU + SUSFS)
-          files: Image.gz
+          body: Kernel Image.gz / boot.img for MT8797 (ReSukiSU + SUSFS)
+          files: |
+            Image.gz
+            boot-fixed-*.img
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
