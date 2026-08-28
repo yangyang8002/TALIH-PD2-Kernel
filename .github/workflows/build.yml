@@ -67,10 +67,11 @@ jobs:
       - name: Prepare raw Image
         run: |
           ls -la
+          # 上传时路径相对 out/ 存储，解包后位于 arch/arm64/boot/
+          ls -la arch/arm64/boot/
           # magiskboot 习惯使用未压缩的 Image，由它负责重新压缩
-          gunzip -c Image.gz > Image.new
-          mv Image.new Image
-          ls -la Image Image.gz || true
+          gunzip -c arch/arm64/boot/Image.gz > Image
+          ls -la Image
           file Image || true
 
       - name: Get magiskboot (x86_64, from Magisk APK)
