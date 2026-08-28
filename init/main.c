@@ -22,6 +22,7 @@
 #include <linux/stackprotector.h>
 #include <linux/string.h>
 #include <linux/ctype.h>
+#include <linux/boot_mark.h>
 #include <linux/delay.h>
 #include <linux/ioport.h>
 #include <linux/init.h>
@@ -957,6 +958,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	char *after_dashes;
 
 	set_task_stack_end_magic(&init_task);
+	boot_mark_early("[main] start_kernel enter");
+	boot_mark("[main] A start_kernel");
 	smp_setup_processor_id();
 	debug_objects_early_init();
 	init_vmlinux_build_id();
@@ -972,9 +975,12 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	 */
 	boot_cpu_init();
 	page_address_init();
+	boot_mark("[main] banner printed");
 	pr_notice("%s", linux_banner);
 	early_security_init();
+	boot_mark("[main] B setup_arch enter");
 	setup_arch(&command_line);
+	boot_mark("[main] C setup_arch done");
 	setup_boot_config();
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
@@ -1010,6 +1016,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	sort_main_extable();
 	trap_init();
 	mm_init();
+	boot_mark_late();
 	poking_init();
 	ftrace_init();
 
@@ -1061,7 +1068,9 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	softirq_init();
 	timekeeping_init();
 	kfence_init();
+	boot_mark("[main] D time_init enter");
 	time_init();
+	boot_mark("[main] E time_init done");
 
 	/*
 	 * For best initial stack canary entropy, prepare it after:
@@ -1088,7 +1097,9 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	 * we've done PCI setups etc, and console_init() must be aware of
 	 * this. But we do want output early, in case something goes wrong.
 	 */
+	boot_mark("[main] F console_init enter");
 	console_init();
+	boot_mark("[main] F console_init done");
 	if (panic_later)
 		panic("Too many boot %s vars at `%s'", panic_later,
 		      panic_param);
@@ -1153,6 +1164,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	kcsan_init();
 
 	/* Do the rest non-__init'ed, we're now alive */
+	boot_mark("[main] G rest_init");
 	arch_call_rest_init();
 
 	prevent_tail_call_optimization();
@@ -1387,6 +1399,7 @@ static void __init do_initcall_level(int level, char *command_line)
 		   NULL, ignore_unknown_bootoption);
 
 	trace_initcall_level(initcall_level_names[level]);
+	boot_mark(initcall_level_names[level]);
 	for (fn = initcall_levels[level]; fn < initcall_levels[level+1]; fn++)
 		do_one_initcall(initcall_from_entry(fn));
 }

@@ -1,9 +1,7 @@
-name: Build TALIH-PD2 (5.15 GKI + SukiSU + susfs)
+name: Build TALIH-PD2 (5.15 GKI + KSU, KASLR off for bisect)
 
 on:
   push:
-    branches: [5.15-gki-port]
-  pull_request:
     branches: [5.15-gki-port]
   workflow_dispatch:
 
@@ -14,17 +12,6 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v4
 
-      - name: Checkout SukiSU-Ultra (KernelSU) into KernelSU/
-        run: |
-          git clone --filter=blob:none --no-checkout \
-            https://github.com/SukiSU-Ultra/SukiSU-Ultra.git KernelSU
-          git -C KernelSU checkout 0ca744a88835144c58d8256ebb32c279edabfcde
-
-      - name: Apply susfs <-> KernelSU integration patch
-        run: |
-          git -C KernelSU apply --check ../patch/11_enable_susfs_for_sukisu.patch
-          git -C KernelSU apply ../patch/11_enable_susfs_for_sukisu.patch
-
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -32,22 +19,12 @@ jobs:
             zlib1g-dev flex bison bc pahole
           clang --version | head -2
 
-      - name: Configure (gki_defconfig + KSU + susfs)
+      - name: Configure (gki_defconfig + KSU + MTK drivers, KASLR off)
         run: |
           export ARCH=arm64 LLVM=1
           make gki_defconfig
           scripts/config \
             --enable KSU \
-            --enable KPM \
-            --enable KSU_SUSFS \
-            --enable KSU_SUSFS_SUS_PATH \
-            --enable KSU_SUSFS_SUS_MOUNT \
-            --enable KSU_SUSFS_SUS_KSTAT \
-            --enable KSU_SUSFS_SPOOF_UNAME \
-            --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-            --enable KSU_SUSFS_OPEN_REDIRECT \
-            --enable KSU_SUSFS_SUS_MAP \
             --enable COMMON_CLK_MT6893 \
             --enable PINCTRL_MT6885 \
             --enable COMPILE_TEST \
@@ -60,22 +37,22 @@ jobs:
             --enable SERIAL_8250_MT6577 \
             --enable MMC_MTK \
             --disable LTO_CLANG_FULL \
-            --enable LTO_CLANG_THIN
+            --enable LTO_CLANG_THIN \
+            --disable RANDOMIZE_BASE
           make olddefconfig
-          grep -E '^CONFIG_KSU(=|_SUSFS)|^CONFIG_KPM|^CONFIG_KALLSYMS|^CONFIG_LTO_CLANG' .config | sort
+          grep -E '^CONFIG_KSU=|^CONFIG_COMMON_CLK_MT6893|^CONFIG_PINCTRL_MT6885|^CONFIG_LTO_CLANG|^CONFIG_RANDOMIZE_BASE' .config | sort
 
-      - name: Build kernel (ThinLTO link)
+      - name: Build kernel Image (ThinLTO link)
         run: |
           export ARCH=arm64 LLVM=1
-          make -j$(nproc)
-          make -j$(nproc) dtbs
+          make -j$(nproc) Image 2>&1 | tail -40
 
       - name: Verify artifacts
         run: |
-          ls -la vmlinux arch/arm64/boot/Image arch/arm64/boot/Image.gz 2>/dev/null
-          ls -la arch/arm64/boot/dts/mediatek/mt6893.dtb arch/arm64/boot/dts/mediatek/ls12_mt8797_wifi_64.dtb arch/arm64/boot/dts/mediatek/ls14_mt8797_wifi_64.dtb 2>/dev/null
-          echo "=== susfs/sukisu symbols in vmlinux ==="
-          nm vmlinux | grep -iE 'susfs|ksu_cred|is_ksu_domain' | head -30
+          ls -la vmlinux arch/arm64/boot/Image
+          echo "=== boot-marker symbols ==="
+          grep -E ' boot_mark(|_early|_late)?' System.map || true
+          nm vmlinux | grep -E ' boot_crash| hbe_buf' || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -84,7 +61,4 @@ jobs:
           path: |
             vmlinux
             arch/arm64/boot/Image
-            arch/arm64/boot/dts/mediatek/mt6893.dtb
-            arch/arm64/boot/dts/mediatek/ls12_mt8797_wifi_64.dtb
-            arch/arm64/boot/dts/mediatek/ls14_mt8797_wifi_64.dtb
           if-no-files-found: error

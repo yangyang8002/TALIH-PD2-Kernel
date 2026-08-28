@@ -25,6 +25,7 @@
 #include <linux/clocksource.h>
 #include <linux/of_clk.h>
 #include <linux/acpi.h>
+#include <linux/boot_mark.h>
 
 #include <clocksource/arm_arch_timer.h>
 
@@ -55,8 +56,11 @@ void __init time_init(void)
 {
 	u32 arch_timer_rate;
 
+	boot_mark("[time_init] begin");
 	of_clk_init(NULL);
+	boot_mark("[time_init] of_clk done");
 	timer_probe();
+	boot_mark("[time_init] timer_probe done");
 
 	tick_setup_hrtimer_broadcast();
 

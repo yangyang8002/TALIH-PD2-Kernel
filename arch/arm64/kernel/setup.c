@@ -293,8 +293,83 @@ u64 cpu_logical_map(unsigned int cpu)
 	return __cpu_logical_map[cpu];
 }
 
+#include <linux/boot_mark.h>
+#include <asm/early_ioremap.h>
+
+#include <asm/memory.h>
+
+/* Early-boot milestone logger: appends a line to the reserved pstore
+ * region (0x48090000) and cleans D-cache so the bootloader kedump can
+ * recover it across a WDT reset. Physical address is fixed by the FDT
+ * reserved-memory node and is read by LK kedump into expdb@0x2800.
+ */
+/*
+ * NOTE: the old ioremap-based logger (write "HBMARK" to no-map pstore
+ * 0x48090000 via early_ioremap) proved to WEDGE this SoC right at the first
+ * write ("fdt done"). Empirically (bootmark4): EBMARK shows [setup_arch] fdt
+ * done is reached, but jump_label_init is not -- the only statement in between
+ * is this ioremap write. So boot_mark()/boot_mark_late() are now STUBS; the
+ * only active logger is boot_mark_early() writing into .init.data.
+ */
+void __init boot_mark(const char *s)
+{
+	(void)s;
+}
+
+void __init boot_mark_late(void)
+{
+}
+
+/*
+ * EARLY milestone logger (no ioremap): an __initdata buffer is linked inside
+ * .init.data, whose phys range [0x42170000, 0x42300000) lies entirely inside
+ * the kedump SYS_KERNEL_LOG_RAW window [0x41b06a00, 0x42306a00), dumped to
+ * expdb@0x3ca608. It is mapped RW from head.S on, so it is writable from the
+ * very top of start_kernel() and from the head of setup_arch(), well before
+ * early_ioremap_init()/fdt scan.
+ */
+static char __initdata hbe_buf[4096];
+static int __initdata hbe_off = 0;
+
+void __init __no_sanitize_address boot_mark_early(const char *s)
+{
+	volatile char *p = hbe_buf;
+
+	if (hbe_off == 0) {
+		p[0] = 'E'; p[1] = 'B'; p[2] = 'M'; p[3] = 'A';
+		p[4] = 'R'; p[5] = 'K'; p[6] = '\n';
+		hbe_off = 7;
+	}
+	while (*s && hbe_off < (int)sizeof(hbe_buf) - 2)
+		p[hbe_off++] = *s++;
+	p[hbe_off++] = '\n';
+}
+
+/*
+ * DELIBERATE dump-triggering marker: write to the no-map pstore phys
+ * 0x48090000 via early_ioremap. This SoC takes a synchronous abort on that
+ * write and LK's kedump then captures the SYS_KERNEL_LOG_RAW window (which
+ * holds hbe_buf). Used to turn the otherwise-SILENT original hang into a
+ * dumpable crash at a chosen checkpoint, for bisection.
+ */
+void __init __no_sanitize_address boot_crash(const char *s)
+{
+	void __iomem *base = early_ioremap(0x48090000UL, 0x1000);
+	unsigned int o;
+
+	if (!base)
+		return;
+	memcpy(base, "CRASH\n", 6);
+	o = 6;
+	while (*s && o < (0x1000 - 2))
+		__raw_writeb((u8)*s++, base + o++);
+	__raw_writeb('\n', base + o);
+}
+
 void __init __no_sanitize_address setup_arch(char **cmdline_p)
 {
+	boot_mark_early("[setup_arch] enter");
+	boot_mark("[setup_arch] begin");
 	setup_initial_init_mm(_stext, _etext, _edata, _end);
 
 	*cmdline_p = boot_command_line;
@@ -307,16 +382,23 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	arm64_use_ng_mappings = kaslr_requires_kpti();
 
 	early_fixmap_init();
+	boot_mark_early("[setup_arch] fixmap done");
 	early_ioremap_init();
+	boot_mark_early("[setup_arch] ioremap_init done");
 
 	setup_machine_fdt(__fdt_pointer);
+	boot_mark_early("[setup_arch] fdt done");
+	boot_mark("[setup_arch] fdt done");
 
 	/*
 	 * Initialise the static keys early as they may be enabled by the
 	 * cpufeature code and early parameters.
 	 */
 	jump_label_init();
+	boot_mark_early("[setup_arch] jump_label done");
 	parse_early_param();
+	boot_mark_early("[setup_arch] early_param done");
+	boot_crash("[CRASH] round8: after early_param");
 
 	/*
 	 * Unmask asynchronous aborts and fiq after bringing up possible
@@ -330,24 +412,33 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	 * point to zero page to avoid speculatively fetching new entries.
 	 */
 	cpu_uninstall_idmap();
+	boot_mark_early("[setup_arch] idmap done");
 
 	xen_early_init();
 	efi_init();
+	boot_mark_early("[setup_arch] efi_init done");
 
 	if (!efi_enabled(EFI_BOOT) && ((u64)_text % MIN_KIMG_ALIGN) != 0)
 	     pr_warn(FW_BUG "Kernel image misaligned at boot, please fix your bootloader!");
 
+	boot_mark_early("[setup_arch] memblock enter");
 	arm64_memblock_init();
+	boot_mark_early("[setup_arch] memblock done");
+	boot_mark("[setup_arch] memblock done");
 
 	paging_init();
+	boot_mark_early("[setup_arch] paging done");
+	boot_mark("[setup_arch] paging done");
 
 	acpi_table_upgrade();
 
 	/* Parse the ACPI tables for possible boot-time configuration */
 	acpi_boot_table_init();
 
-	if (acpi_disabled)
+	if (acpi_disabled) {
 		unflatten_device_tree();
+		boot_mark("[setup_arch] unflatten done");
+	}
 
 	bootmem_init();
 
@@ -357,13 +448,15 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 
 	early_ioremap_reset();
 
-	if (acpi_disabled)
+	if (acpi_disabled) {
 		psci_dt_init();
-	else
+		boot_mark("[setup_arch] psci done");
+	} else
 		psci_acpi_init();
 
 	init_bootcpu_ops();
 	smp_init_cpus();
+	boot_mark("[setup_arch] smp_init_cpus done");
 	smp_build_mpidr_hash();
 
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN

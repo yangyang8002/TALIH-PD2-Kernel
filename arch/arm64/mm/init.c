@@ -11,6 +11,7 @@
 #include <linux/errno.h>
 #include <linux/swap.h>
 #include <linux/init.h>
+#include <linux/boot_mark.h>
 #include <linux/cache.h>
 #include <linux/mman.h>
 #include <linux/nodemask.h>
@@ -348,6 +349,7 @@ void __init arm64_memblock_init(void)
 	 * Register the kernel text, kernel data, initrd, and initial
 	 * pagetables with memblock.
 	 */
+	boot_mark_early("[memblock] memstart done");
 	memblock_reserve(__pa_symbol(_stext), _end - _stext);
 	if (IS_ENABLED(CONFIG_BLK_DEV_INITRD) && phys_initrd_size) {
 		/* the generic initrd code expects virtual addresses */
@@ -355,12 +357,16 @@ void __init arm64_memblock_init(void)
 		initrd_end = initrd_start + phys_initrd_size;
 	}
 
+	boot_mark_early("[memblock] reserve done");
+	boot_mark_early("[memblock] reserved_mem enter");
 	early_init_fdt_scan_reserved_mem();
+	boot_mark_early("[memblock] reserved_mem done");
 
 	if (!IS_ENABLED(CONFIG_ZONE_DMA) && !IS_ENABLED(CONFIG_ZONE_DMA32))
 		reserve_crashkernel();
 
 	high_memory = __va(memblock_end_of_DRAM() - 1) + 1;
+	boot_mark_early("[memblock] end");
 }
 
 void __init bootmem_init(void)
