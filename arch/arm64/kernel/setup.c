@@ -383,7 +383,6 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	setup_machine_fdt(__fdt_pointer);
 	boot_mark_early("[setup_arch] fdt done");
 	boot_mark("[setup_arch] fdt done");
-	boot_crash("[CRASH] round9: after fdt done");
 
 	/*
 	 * Initialise the static keys early as they may be enabled by the
@@ -391,6 +390,7 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	 */
 	jump_label_init();
 	boot_mark_early("[setup_arch] jump_label done");
+	boot_crash("[CRASH] round10: after jump_label");
 	parse_early_param();
 	boot_mark_early("[setup_arch] early_param done");
 
