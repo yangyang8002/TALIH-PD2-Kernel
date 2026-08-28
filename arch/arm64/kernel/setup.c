@@ -392,7 +392,6 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	boot_mark_early("[setup_arch] jump_label done");
 	parse_early_param();
 	boot_mark_early("[setup_arch] early_param done");
-	boot_crash("[CRASH] round11: after early_param");
 
 	/*
 	 * Unmask asynchronous aborts and fiq after bringing up possible
@@ -423,6 +422,7 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	paging_init();
 	boot_mark_early("[setup_arch] paging done");
 	boot_mark("[setup_arch] paging done");
+	boot_crash("[CRASH] round18: after paging done");
 
 	acpi_table_upgrade();
 
