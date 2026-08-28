@@ -770,6 +770,8 @@ static int __init do_early_param(char *param, char *val,
 
 	early_param_mark_cnt++;
 	boot_mark_early(param);
+	if (early_param_mark_cnt == EARLY_PARAM_BISECT_N)
+		boot_crash("[CRASH] do_early_param entry");
 	for (p = __setup_start; p < __setup_end; p++) {
 		if ((p->early && parameq(param, p->str)) ||
 		    (strcmp(param, "console") == 0 &&
@@ -779,8 +781,6 @@ static int __init do_early_param(char *param, char *val,
 				pr_warn("Malformed early option '%s'\n", param);
 		}
 	}
-	if (early_param_mark_cnt == EARLY_PARAM_BISECT_N)
-		boot_crash("[CRASH] after EARLY_PARAM_BISECT_N early params");
 	/* We accept everything at this stage. */
 	return 0;
 }
