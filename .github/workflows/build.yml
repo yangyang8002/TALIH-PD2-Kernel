@@ -12,6 +12,12 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v4
 
+      - name: Checkout SukiSU-Ultra (KernelSU) into KernelSU/
+        run: |
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/SukiSU-Ultra/SukiSU-Ultra.git KernelSU
+          git -C KernelSU checkout 0ca744a88835144c58d8256ebb32c279edabfcde
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
