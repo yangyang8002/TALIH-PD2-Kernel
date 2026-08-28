@@ -757,6 +757,7 @@ __maybe_unused static int sc856x_init_device(struct sc856x_chip *sc)
         {PMID2OUT_OVP_DIS, sc->cfg.pmid2out_ovp_dis},
         {PMID2OUT_OVP, sc->cfg.pmid2out_ovp},
         {FSW_SET, sc->cfg.fsw_set},
+        {SS_TIMEOUT, sc->cfg.ss_timeout},
         {WD_TIMEOUT, sc->cfg.wd_timeout},
         {SET_IBAT_SNS_RES, sc->cfg.ibat_sns_r},
         {MODE, sc->cfg.mode},

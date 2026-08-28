@@ -489,7 +489,19 @@ static int pca_mtk_chg_probe(struct platform_device *pdev)
 				mtk_chgtyp_name[i]);
 	}
 	if (!info->chgdev[MTK_CHGTYP_SWCHG])
-		return -ENODEV;
+		return -EPROBE_DEFER;
+
+	/*
+	 * The divider charge pump (SC856x = "primary_divider_chg") is required
+	 * for PE5.0 / PPS direct charging on this platform. It is an I2C client
+	 * whose probe time relative to this platform driver is not guaranteed.
+	 * If we bind without it, the device silently loses direct charging and
+	 * is stuck at ~7 W (5 V/1.4 A) until the next reboot - "fast charge cuts
+	 * out at a certain power / reboot makes it work again". Defer so the
+	 * driver core retries probe once the SC856x has registered.
+	 */
+	if (!info->chgdev[MTK_CHGTYP_DVCHG])
+		return -EPROBE_DEFER;
 	info->chg_consumer = charger_manager_get_by_name(info->dev,
 							 "charger_port1");
 	if (!info->chg_consumer) {
