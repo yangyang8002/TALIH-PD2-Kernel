@@ -757,12 +757,19 @@ noinline void __ref rest_init(void)
 	cpu_startup_entry(CPUHP_ONLINE);
 }
 
-/* Check for early params. */
+/* Check for early params.
+ * Self-destruct bisection: each cmdline token is marked into EBMARK, and we
+ * deliberately crash after EARLY_PARAM_BISECT_N tokens are fully handled.
+ */
+static int __initdata early_param_mark_cnt = 0;
+
 static int __init do_early_param(char *param, char *val,
 				 const char *unused, void *arg)
 {
 	const struct obs_kernel_param *p;
 
+	early_param_mark_cnt++;
+	boot_mark_early(param);
 	for (p = __setup_start; p < __setup_end; p++) {
 		if ((p->early && parameq(param, p->str)) ||
 		    (strcmp(param, "console") == 0 &&
@@ -772,6 +779,8 @@ static int __init do_early_param(char *param, char *val,
 				pr_warn("Malformed early option '%s'\n", param);
 		}
 	}
+	if (early_param_mark_cnt == EARLY_PARAM_BISECT_N)
+		boot_crash("[CRASH] after EARLY_PARAM_BISECT_N early params");
 	/* We accept everything at this stage. */
 	return 0;
 }
