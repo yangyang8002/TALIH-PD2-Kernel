@@ -17,12 +17,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev libc6-dev linux-libc-dev device-tree-compiler cpio gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf git wget xz-utils python3 python3-pip patch unzip
 
-      - name: Pull ReSukiSU (latest main) and integrate
+      - name: Pull ReSukiSU (pinned) and integrate
+        env:
+          # 固定到 v2.2.0 发布时 ReSukiSU main 的 HEAD（2026-08-14 faccf4c5）。
+          # 之后 ReSukiSU main 新增了 susfs_*_current_proc_no_su 等接口，
+          # 与本仓库 4.19 的 susfs 适配 patch 不兼容，直接拉 latest 会链接失败。
+          RESUKISU_COMMIT: faccf4c5edc7be37776216e7d43dd3dca0239331
         run: |
-          # 仓库中不再内置 KernelSU 源码，按官方流程拉取最新 ReSukiSU（保留 .git，Kbuild 需要）
+          # 仓库中不再内置 KernelSU 源码，按官方流程拉取指定版本的 ReSukiSU（保留 .git，Kbuild 需要）
           rm -rf KernelSU drivers/kernelsu
           git checkout -- drivers/Makefile drivers/Kconfig
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s "$RESUKISU_COMMIT"
 
       - name: Apply SUSFS kernel patch (4.19, non-GKI)
         run: |
