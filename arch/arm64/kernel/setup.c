@@ -410,6 +410,7 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	xen_early_init();
 	efi_init();
 	boot_mark_early("[setup_arch] efi_init done");
+	boot_crash("[CRASH] round19: after efi_init");
 
 	if (!efi_enabled(EFI_BOOT) && ((u64)_text % MIN_KIMG_ALIGN) != 0)
 	     pr_warn(FW_BUG "Kernel image misaligned at boot, please fix your bootloader!");
@@ -422,7 +423,6 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	paging_init();
 	boot_mark_early("[setup_arch] paging done");
 	boot_mark("[setup_arch] paging done");
-	boot_crash("[CRASH] round18: after paging done");
 
 	acpi_table_upgrade();
 
