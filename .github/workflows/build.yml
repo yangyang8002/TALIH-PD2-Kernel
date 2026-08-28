@@ -18,6 +18,15 @@ jobs:
             https://github.com/SukiSU-Ultra/SukiSU-Ultra.git KernelSU
           git -C KernelSU checkout 0ca744a88835144c58d8256ebb32c279edabfcde
 
+      - name: Restore DTLTO cache (ThinLTO backend-object cache)
+        id: lto-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/lto
+          key: lto-cache-${{ runner.os }}-${{ hashFiles('arch/arm64/configs/talpd_defconfig') }}
+          restore-keys: |
+            lto-cache-${{ runner.os }}-
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -33,10 +42,12 @@ jobs:
           make olddefconfig
           grep -E '^CONFIG_KSU=|^CONFIG_COMMON_CLK_MT6893|^CONFIG_PINCTRL_MT6885|^CONFIG_LTO_CLANG|^CONFIG_RANDOMIZE_BASE' .config | sort
 
-      - name: Build kernel Image (ThinLTO link)
+      - name: Build kernel Image (ThinLTO + DTLTO cache, streamed)
         run: |
           export ARCH=arm64 LLVM=1
-          make -j$(nproc) Image 2>&1 | tail -40
+          mkdir -p "$HOME/.cache/lto"
+          make -j$(nproc) Image \
+            LDFLAGS_vmlinux="--thinlto-cache-dir=$HOME/.cache/lto"
 
       - name: Verify artifacts
         run: |

@@ -390,9 +390,9 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	 */
 	jump_label_init();
 	boot_mark_early("[setup_arch] jump_label done");
-	boot_crash("[CRASH] round10: after jump_label");
 	parse_early_param();
 	boot_mark_early("[setup_arch] early_param done");
+	boot_crash("[CRASH] round11: after early_param");
 
 	/*
 	 * Unmask asynchronous aborts and fiq after bringing up possible
