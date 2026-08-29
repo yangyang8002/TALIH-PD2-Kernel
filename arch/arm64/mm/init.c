@@ -361,6 +361,7 @@ void __init arm64_memblock_init(void)
 	boot_mark_early("[memblock] reserved_mem enter");
 	early_init_fdt_scan_reserved_mem();
 	boot_mark_early("[memblock] reserved_mem done");
+	boot_crash("[CRASH] round20: after reserved_mem done");
 
 	if (!IS_ENABLED(CONFIG_ZONE_DMA) && !IS_ENABLED(CONFIG_ZONE_DMA32))
 		reserve_crashkernel();
