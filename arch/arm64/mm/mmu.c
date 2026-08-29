@@ -790,7 +790,14 @@ void __init paging_init(void)
 
 	pgd_clear_fixmap();
 	boot_mark_early("[paging] clear_fixmap done");
-	boot_crash("[CRASH] round27: before ttbr1 switch");
+
+	boot_mark_early("[paging] ttbr1 values");
+	boot_mark_early_hex("[paging]   pgdp_va=", (u64)lm_alias(swapper_pg_dir));
+	boot_mark_early_hex("[paging]   v2p    =", virt_to_phys((pgd_t *)lm_alias(swapper_pg_dir)));
+	boot_mark_early_hex("[paging]   sym_pa =", __pa_symbol(swapper_pg_dir));
+	boot_mark_early_hex("[paging]   memstart=", memstart_addr);
+	boot_mark_early_hex("[paging]   vabits  =", vabits_actual);
+	boot_crash("[CRASH] round28: dump ttbr1 values before switch");
 
 	cpu_replace_ttbr1(lm_alias(swapper_pg_dir));
 	boot_mark_early("[paging] ttbr1 done");
