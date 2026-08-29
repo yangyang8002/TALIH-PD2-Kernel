@@ -564,7 +564,6 @@ static void __init map_mem(pgd_t *pgdp)
 			       flags);
 	}
 	boot_mark_early("[mapping] banks loop done");
-	boot_crash("[CRASH] round24: after mem_range loop");
 
 	/*
 	 * Map the linear alias of the [_stext, __init_begin) interval
@@ -578,6 +577,8 @@ static void __init map_mem(pgd_t *pgdp)
 	 */
 	__map_memblock(pgdp, kernel_start, kernel_end,
 		       PAGE_KERNEL, NO_CONT_MAPPINGS);
+	boot_mark_early("[mapping] kernel alias mapped");
+	boot_crash("[CRASH] round25: after kernel alias map");
 	memblock_clear_nomap(kernel_start, kernel_end - kernel_start);
 
 	/*
