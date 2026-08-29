@@ -418,6 +418,7 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	arm64_memblock_init();
 	boot_mark_early("[setup_arch] memblock done");
 	boot_mark("[setup_arch] memblock done");
+	boot_crash("[CRASH] round21: after memblock done");
 
 	paging_init();
 	boot_mark_early("[setup_arch] paging done");
