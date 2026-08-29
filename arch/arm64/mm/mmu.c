@@ -21,6 +21,7 @@
 #include <linux/fs.h>
 #include <linux/io.h>
 #include <linux/mm.h>
+#include <linux/boot_mark.h>
 #include <linux/vmalloc.h>
 #include <linux/set_memory.h>
 
@@ -775,19 +776,27 @@ static void __init map_kernel(pgd_t *pgdp)
 void __init paging_init(void)
 {
 	pgd_t *pgdp = pgd_set_fixmap(__pa_symbol(swapper_pg_dir));
+	boot_mark_early("[paging] pgd fixmap done");
 
 	map_kernel(pgdp);
+	boot_mark_early("[paging] map_kernel done");
+
 	map_mem(pgdp);
+	boot_mark_early("[paging] map_mem done");
+	boot_crash("[CRASH] round22: after map_mem");
 
 	pgd_clear_fixmap();
+	boot_mark_early("[paging] clear_fixmap done");
 
 	cpu_replace_ttbr1(lm_alias(swapper_pg_dir));
+	boot_mark_early("[paging] ttbr1 done");
 	init_mm.pgd = swapper_pg_dir;
 
 	memblock_free(__pa_symbol(init_pg_dir),
 		      __pa_symbol(init_pg_end) - __pa_symbol(init_pg_dir));
 
 	memblock_allow_resize();
+	boot_mark_early("[paging] end");
 }
 
 /*
