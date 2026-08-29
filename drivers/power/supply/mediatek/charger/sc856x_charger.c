@@ -757,6 +757,7 @@ __maybe_unused static int sc856x_init_device(struct sc856x_chip *sc)
         {PMID2OUT_OVP_DIS, sc->cfg.pmid2out_ovp_dis},
         {PMID2OUT_OVP, sc->cfg.pmid2out_ovp},
         {FSW_SET, sc->cfg.fsw_set},
+        {SS_TIMEOUT, sc->cfg.ss_timeout},
         {WD_TIMEOUT, sc->cfg.wd_timeout},
         {SET_IBAT_SNS_RES, sc->cfg.ibat_sns_r},
         {MODE, sc->cfg.mode},
@@ -1497,10 +1498,32 @@ static int sc856x_charger_probe(struct i2c_client *client,
         dev_err(sc->dev, "%s parse dt failed(%d)\n", __func__, ret);
         goto err_parse_dt;
     }
-    ret = sc856x_detect_device(sc);
-    if (ret < 0) {
-        dev_err(sc->dev, "%s detect device fail\n", __func__);
-        goto err_detect_dev;
+    /*
+     * SC856x needs a few ms after its EN (lpm_gpio) is asserted and its
+     * supply rail is up before it will ACK on i2c. On some boots the chip
+     * is not ready when this i2c6 probe runs first (DEVICE_ID read NACKs
+     * with -EREMOTEIO), and the original code failed the probe for good,
+     * leaving the board on 5 V/1.4 A MT6360-only charging (~7 W) with no
+     * direct charge. Retry for a while, then EPROBE_DEFER so the driver
+     * core re-probes once the rail/driver lands instead of giving up.
+     */
+    {
+        int detect_try;
+        ret = -EREMOTEIO;
+        for (detect_try = 0; detect_try < 5; detect_try++) {
+            ret = sc856x_detect_device(sc);
+            if (ret == 0)
+                break;
+            dev_err(sc->dev, "%s detect device fail(%d) try %d\n",
+                    __func__, ret, detect_try + 1);
+            msleep(50);
+        }
+        if (ret < 0) {
+            dev_err(sc->dev, "%s detect device still fail(%d), deferring\n",
+                    __func__, ret);
+            ret = -EPROBE_DEFER;
+            goto err_detect_dev;
+        }
     }
 
     i2c_set_clientdata(client, sc);
