@@ -575,13 +575,6 @@ static void __init map_mem(pgd_t *pgdp)
 	 * Note that contiguous mappings cannot be remapped in this way,
 	 * so we should avoid them here.
 	 */
-	boot_mark_early("[mapping] alias values");
-	boot_mark_early_hex("[mapping]   kstart=", kernel_start);
-	boot_mark_early_hex("[mapping]   kend  =", kernel_end);
-	boot_mark_early_hex("[mapping]   size  =", kernel_end - kernel_start);
-	boot_mark_early_hex("[mapping]   virt  =", (u64)__phys_to_virt(kernel_start));
-	boot_crash("[CRASH] round26: before alias map (dump vals)");
-
 	__map_memblock(pgdp, kernel_start, kernel_end,
 		       PAGE_KERNEL, NO_CONT_MAPPINGS);
 	boot_mark_early("[mapping] kernel alias mapped");
@@ -797,6 +790,7 @@ void __init paging_init(void)
 
 	pgd_clear_fixmap();
 	boot_mark_early("[paging] clear_fixmap done");
+	boot_crash("[CRASH] round27: before ttbr1 switch");
 
 	cpu_replace_ttbr1(lm_alias(swapper_pg_dir));
 	boot_mark_early("[paging] ttbr1 done");
