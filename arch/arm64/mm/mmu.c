@@ -550,9 +550,11 @@ static void __init map_mem(pgd_t *pgdp)
 #endif
 
 	/* map all the memory banks */
+	boot_mark_early("[mapping] banks loop enter");
 	for_each_mem_range(i, &start, &end) {
 		if (start >= end)
 			break;
+		boot_mark_early("[mapping] bank iter");
 		/*
 		 * The linear map must allow allocation tags reading/writing
 		 * if MTE is present. Otherwise, it has the same attributes as
@@ -561,6 +563,8 @@ static void __init map_mem(pgd_t *pgdp)
 		__map_memblock(pgdp, start, end, pgprot_tagged(PAGE_KERNEL),
 			       flags);
 	}
+	boot_mark_early("[mapping] banks loop done");
+	boot_crash("[CRASH] round24: after mem_range loop");
 
 	/*
 	 * Map the linear alias of the [_stext, __init_begin) interval
@@ -780,7 +784,6 @@ void __init paging_init(void)
 
 	map_kernel(pgdp);
 	boot_mark_early("[paging] map_kernel done");
-	boot_crash("[CRASH] round23: after map_kernel");
 
 	map_mem(pgdp);
 	boot_mark_early("[paging] map_mem done");
