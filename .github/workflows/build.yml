@@ -139,12 +139,21 @@ jobs:
         with:
           name: boot-image
 
+      - name: Locate assets for release
+        run: |
+          # kernel-image 上传时按相对 out/ 的路径存储
+          [ -f arch/arm64/boot/Image.gz ] && mv arch/arm64/boot/Image.gz Image.gz
+          ls -la
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Kernel MT8797 ${{ github.ref_name }}
-          body: Kernel Image.gz / boot.img for MT8797 (ReSukiSU + SUSFS)
+          body: |
+            Kernel for MT8797 (ReSukiSU + SUSFS), 修复快充卡 7W(SC856x 探测竞态)。
+            - Image.gz: 内核
+            - boot-fixed-*.img: 已替换内核并去除 Magisk 的 boot 镜像(fastboot flash boot)
           files: |
             Image.gz
             boot-fixed-*.img
