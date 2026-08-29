@@ -780,10 +780,10 @@ void __init paging_init(void)
 
 	map_kernel(pgdp);
 	boot_mark_early("[paging] map_kernel done");
+	boot_crash("[CRASH] round23: after map_kernel");
 
 	map_mem(pgdp);
 	boot_mark_early("[paging] map_mem done");
-	boot_crash("[CRASH] round22: after map_mem");
 
 	pgd_clear_fixmap();
 	boot_mark_early("[paging] clear_fixmap done");
