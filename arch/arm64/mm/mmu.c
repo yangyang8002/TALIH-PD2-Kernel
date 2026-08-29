@@ -575,10 +575,16 @@ static void __init map_mem(pgd_t *pgdp)
 	 * Note that contiguous mappings cannot be remapped in this way,
 	 * so we should avoid them here.
 	 */
+	boot_mark_early("[mapping] alias values");
+	boot_mark_early_hex("[mapping]   kstart=", kernel_start);
+	boot_mark_early_hex("[mapping]   kend  =", kernel_end);
+	boot_mark_early_hex("[mapping]   size  =", kernel_end - kernel_start);
+	boot_mark_early_hex("[mapping]   virt  =", (u64)__phys_to_virt(kernel_start));
+	boot_crash("[CRASH] round26: before alias map (dump vals)");
+
 	__map_memblock(pgdp, kernel_start, kernel_end,
 		       PAGE_KERNEL, NO_CONT_MAPPINGS);
 	boot_mark_early("[mapping] kernel alias mapped");
-	boot_crash("[CRASH] round25: after kernel alias map");
 	memblock_clear_nomap(kernel_start, kernel_end - kernel_start);
 
 	/*

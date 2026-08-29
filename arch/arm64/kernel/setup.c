@@ -345,6 +345,24 @@ void __init __no_sanitize_address boot_mark_early(const char *s)
 	p[hbe_off++] = '\n';
 }
 
+void __init __no_sanitize_address boot_mark_early_hex(const char *tag, u64 val)
+{
+	char buf[64];
+	static const char hexdigits[] = "0123456789abcdef";
+	int i = 0, j;
+
+	while (*tag && i < 40)
+		buf[i++] = *tag++;
+	buf[i++] = ':';
+	buf[i++] = ' ';
+	buf[i++] = '0';
+	buf[i++] = 'x';
+	for (j = 60; j >= 0; j -= 4)
+		buf[i++] = hexdigits[(val >> j) & 0xf];
+	buf[i] = 0;
+	boot_mark_early(buf);
+}
+
 /*
  * DELIBERATE dump-triggering marker: guaranteed synchronous data abort
  * (NULL store). This reproduces the same dumpable fault class LK's kedump
