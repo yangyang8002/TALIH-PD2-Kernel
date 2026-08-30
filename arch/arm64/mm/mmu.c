@@ -800,7 +800,6 @@ void __init paging_init(void)
 
 	cpu_replace_ttbr1(lm_alias(swapper_pg_dir));
 	boot_mark_early("[paging] ttbr1 done");
-	boot_crash("[CRASH] round29: after ttbr1 switch");
 	init_mm.pgd = swapper_pg_dir;
 
 	memblock_free(__pa_symbol(init_pg_dir),
