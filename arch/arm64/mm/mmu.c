@@ -797,10 +797,10 @@ void __init paging_init(void)
 	boot_mark_early_hex("[paging]   sym_pa =", __pa_symbol(swapper_pg_dir));
 	boot_mark_early_hex("[paging]   memstart=", memstart_addr);
 	boot_mark_early_hex("[paging]   vabits  =", vabits_actual);
-	boot_crash("[CRASH] round28: dump ttbr1 values before switch");
 
 	cpu_replace_ttbr1(lm_alias(swapper_pg_dir));
 	boot_mark_early("[paging] ttbr1 done");
+	boot_crash("[CRASH] round29: after ttbr1 switch");
 	init_mm.pgd = swapper_pg_dir;
 
 	memblock_free(__pa_symbol(init_pg_dir),
