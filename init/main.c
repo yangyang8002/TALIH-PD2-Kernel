@@ -1644,8 +1644,6 @@ static noinline void __init kernel_init_freeable(void)
 	do_basic_setup();
 
 	/* ROUND37 probe: only reached if ALL initcall levels completed. */
-	pr_emerg("R37: after do_basic_setup (all initcalls done), about to panic
-");
 	panic("R37: after do_basic_setup (all initcalls done)");
 
 	kunit_run_all_tests();
