@@ -1071,7 +1071,6 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	boot_mark("[main] D time_init enter");
 	time_init();
 	boot_mark("[main] E time_init done");
-	boot_crash("[CRASH] after time_init done");  /* round34 bisect */
 
 	/*
 	 * For best initial stack canary entropy, prepare it after:
@@ -1643,6 +1642,11 @@ static noinline void __init kernel_init_freeable(void)
 	page_ext_init();
 
 	do_basic_setup();
+
+	/* ROUND37 probe: only reached if ALL initcall levels completed. */
+	pr_emerg("R37: after do_basic_setup (all initcalls done), about to panic
+");
+	panic("R37: after do_basic_setup (all initcalls done)");
 
 	kunit_run_all_tests();
 
