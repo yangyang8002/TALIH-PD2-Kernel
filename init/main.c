@@ -981,6 +981,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 	boot_mark("[main] B setup_arch enter");
 	setup_arch(&command_line);
 	boot_mark("[main] C setup_arch done");
+	boot_crash("[CRASH] after setup_arch done");  /* round33 bisect */
 	setup_boot_config();
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
