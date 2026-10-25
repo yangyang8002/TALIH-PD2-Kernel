@@ -149,7 +149,14 @@ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
 EXPORT_SYMBOL(vfs_statx_fd);
 
 #ifdef CONFIG_KSU
+#ifdef CONFIG_KSU_SUSFS
+/* BakaSU >= v4.2.0-rc3: SUSFS 模式下 stat hook 需要 struct filename 形参 */
+#include <linux/susfs_def.h>
+extern bool __ksu_is_allow_uid_for_current(uid_t uid);
+extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
+#else
 extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+#endif
 #endif
 
 
@@ -176,7 +183,9 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
 	unsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
 
    #ifdef CONFIG_KSU
+   #ifndef CONFIG_KSU_SUSFS
 	ksu_handle_stat(&dfd, &filename, &flags);
+   #endif
    #endif
 	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
 		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
@@ -190,7 +199,19 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
 		lookup_flags |= LOOKUP_EMPTY;
 
 retry:
+   #ifdef CONFIG_KSU_SUSFS
+	{
+		struct filename *fname = getname_flags(filename, lookup_flags, NULL);
+		if (likely(!susfs_is_current_proc_no_su()) &&
+		    unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
+			ksu_handle_stat(&dfd, &fname, &flags);
+		error = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
+		if (!IS_ERR(fname))
+			putname(fname);
+	}
+   #else
 	error = user_path_at(dfd, filename, lookup_flags, &path);
+   #endif
 	if (error)
 		goto out;
 

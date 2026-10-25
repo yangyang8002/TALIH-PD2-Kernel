@@ -2,7 +2,7 @@ name: Build and Release Kernel
 
 on:
   push:
-    branches: [ main, master, resukisu-susfs, fix-charge-otg ]
+    branches: [ main, master, susfs-v2.2.0, resukisu-susfs, fix-charge-otg ]
     tags: [ '*' ]
   workflow_dispatch:
 
@@ -17,17 +17,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev libc6-dev linux-libc-dev device-tree-compiler cpio gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf git wget xz-utils python3 python3-pip patch unzip
 
-      - name: Pull ReSukiSU (pinned) and integrate
+      - name: Pull BakaSU (pinned) and integrate
         env:
-          # 固定到 v2.2.0 发布时 ReSukiSU main 的 HEAD（2026-08-14 faccf4c5）。
-          # 之后 ReSukiSU main 新增了 susfs_*_current_proc_no_su 等接口，
-          # 与本仓库 4.19 的 susfs 适配 patch 不兼容，直接拉 latest 会链接失败。
-          RESUKISU_COMMIT: faccf4c5edc7be37776216e7d43dd3dca0239331
+          # 固定到 BakaSU v4.2.0-rc3（ReSukiSU 更名后的续作，tag v4.2.0-rc3 = 239e1e88，2026-09-22）。
+          # 注意：rc3 的 SUSFS 模式 hook（faccessat/stat）要求 struct filename 形参，
+          # 且需要 susfs_def.h 提供 susfs_*_current_proc_no_su / *_for_zygote_next 接口
+          # （本仓库 fs/open.c、fs/stat.c 与 50_add_susfs_in_kernel-4.19.patch 已同步适配）。
+          BAKASU_COMMIT: 239e1e8871b8fcd51a6e5b3002e0ba522fdd99fb
         run: |
-          # 仓库中不再内置 KernelSU 源码，按官方流程拉取指定版本的 ReSukiSU（保留 .git，Kbuild 需要）
+          # 仓库中不再内置 KernelSU 源码，按官方流程拉取指定版本的 BakaSU（保留 .git，Kbuild 需要）
           rm -rf KernelSU drivers/kernelsu
           git checkout -- drivers/Makefile drivers/Kconfig
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s "$RESUKISU_COMMIT"
+          curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/${BAKASU_COMMIT}/kernel/setup.sh" | bash -s "$BAKASU_COMMIT"
 
       - name: Apply SUSFS kernel patch (4.19, non-GKI)
         run: |
@@ -151,9 +152,10 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Kernel MT8797 ${{ github.ref_name }}
           body: |
-            Kernel for MT8797 (ReSukiSU + SUSFS), 修复快充卡 7W(SC856x 探测竞态)。
+            Kernel for MT8797 (BakaSU v4.2.0-rc3 + SUSFS), 修复快充卡 7W(SC856x 探测竞态)。
             - Image.gz: 内核
             - boot-fixed-*.img: 已替换内核并去除 Magisk 的 boot 镜像(fastboot flash boot)
+            - 请配套使用 BakaSU v4.2.0-rc3 Manager APK(见 Baka-SU/BakaSU releases)
           files: |
             Image.gz
             boot-fixed-*.img

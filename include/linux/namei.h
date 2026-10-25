@@ -88,6 +88,11 @@ extern struct dentry *lookup_one_len(const char *, struct dentry *, int);
 extern struct dentry *lookup_one_len2(const char *, struct vfsmount *mnt, struct dentry *, int);
 extern struct dentry *lookup_one_len_unlocked(const char *, struct dentry *, int);
 
+/* exposed for KSU/SUSFS faccessat/stat hook wiring (kernel 4.19 backport) */
+struct filename;
+extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
+			   struct path *path, struct path *root);
+
 extern int follow_down_one(struct path *);
 extern int follow_down(struct path *);
 extern int follow_up(struct path *);
