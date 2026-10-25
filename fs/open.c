@@ -424,12 +424,15 @@ retry:
    #ifdef CONFIG_KSU_SUSFS
 	{
 		struct filename *fname = getname_flags(filename, lookup_flags, NULL);
-		if (likely(!susfs_is_current_proc_no_su()) &&
-		    unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
-			ksu_handle_faccessat(&dfd, &fname, &mode, NULL);
-		res = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
-		if (!IS_ERR(fname))
-			putname(fname);
+		if (IS_ERR(fname)) {
+			res = PTR_ERR(fname);
+		} else {
+			if (likely(!susfs_is_current_proc_no_su()) &&
+			    unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
+				ksu_handle_faccessat(&dfd, &fname, &mode, NULL);
+			/* 4.19 filename_lookup() consumes fname and calls putname(). */
+			res = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
+		}
 	}
    #else
 	res = user_path_at(dfd, filename, lookup_flags, &path);

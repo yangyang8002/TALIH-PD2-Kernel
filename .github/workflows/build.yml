@@ -54,7 +54,7 @@ jobs:
             out/vmlinux
           retention-days: 7
 
-  # 用官方 release boot-resukisu-susfs220.img 作底座，只替换内核并去掉 Magisk，
+  # 用已实机验证的 susfs-v2.2.0-fixed boot 作底座，只替换内核并去掉 Magisk，
   # 产出一个可直接 fastboot flash boot 的镜像（保留原 dtb+ramdisk+vbmeta）。
   package-boot:
     needs: build
@@ -83,9 +83,9 @@ jobs:
           chmod +x magiskboot
           ./magiskboot 2>&1 | head -5 || true
 
-      - name: Download base boot image (release resukisu-susfs v2.2.0)
+      - name: Download base boot image (verified susfs-v2.2.0-fixed)
         run: |
-          wget -q -O base-boot.img "https://github.com/yangyang8002/TALIH-PD2-Kernel/releases/download/resukisu-susfs-v2.2.0/boot-resukisu-susfs220.img"
+          wget -q -O base-boot.img "https://github.com/yangyang8002/TALIH-PD2-Kernel/releases/download/susfs-v2.2.0-fixed/boot-susfs-v2.2.0-fixed.img"
           ls -la base-boot.img
           file base-boot.img
 
